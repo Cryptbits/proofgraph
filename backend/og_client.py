@@ -1,30 +1,21 @@
-# ================================================================
-# og_client.py — OpenGradient SDK Wrapper (MVP / Live)
+# og_client.py
+# OpenGradient SDK wrapper using the current API.
+# Docs: docs.opengradient.ai/developers/sdk/llm.html
 #
-# Correct OG SDK:
-#   client = og.Client(private_key="0x...")
-#   resp   = client.llm_chat(model_cid, messages,
-#                inference_mode=og.LlmInferenceMode.TEE, ...)
-# Response is a tuple: (model_output, tx_hash) for TEE
-#                      (model_output,)          for VANILLA
-# model_output has .choices[0].message.content  (OpenAI-style)
-# ================================================================
+# Current API (as of 2026):
+#   llm = og.LLM(private_key="0x...")
+#   await llm.ensure_opg_approval(opg_amount=5.0)
+#   result = await llm.chat(model=og.TEE_LLM.GPT_4_1_2025_04_14, messages=[...])
+#   result.chat_output['content']  -> text
+#   result.payment_hash            -> payment tx hash
 
 import os
 import asyncio
 from datetime import datetime
 from typing import Optional, Dict, Any
-from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 
 load_dotenv()
-
-# Model priority list — tried in order until one succeeds
-OG_MODELS = [
-    "meta-llama/Meta-Llama-3.1-8B-Instruct",
-    "meta-llama/Meta-Llama-3-8B-Instruct",
-    "mistralai/Mistral-7B-Instruct-v0.2",
-]
 
 _PLACEHOLDER_KEYS = {
     "", "0x", "0xyour_private_key_here",
@@ -32,262 +23,186 @@ _PLACEHOLDER_KEYS = {
     "your_private_key", "add_your_key_here",
 }
 
+# Default model — GPT-4.1 via OG TEE
+DEFAULT_MODEL = "openai/gpt-4.1-2025-04-14"
+
 
 class OGClient:
 
     def __init__(self):
         self.private_key  = os.getenv("OG_PRIVATE_KEY", "").strip()
-        self.email        = os.getenv("OG_EMAIL", "").strip()
-        self.password     = os.getenv("OG_PASSWORD", "").strip()
-        self._executor    = ThreadPoolExecutor(max_workers=4)
-        self._client      = None   # og.Client instance
-        self._og          = None   # opengradient module
+        self._llm         = None
+        self._og          = None
         self._initialized = False
         self.mode         = "KNOWLEDGE"
         self.wallet       = None
 
-    # ── Initialization ─────────────────────────────────────────
-
     def _init_sdk(self):
         if self.private_key.lower() in _PLACEHOLDER_KEYS:
-            print("ℹ️  No OG_PRIVATE_KEY set — Knowledge Mode")
-            print("   Add private key to backend/.env for live TEE inference")
+            print("No OG_PRIVATE_KEY set — running in Knowledge Mode")
             return
 
         try:
             import opengradient as og
-            self._og = og
+            self._og  = og
 
-            if self.email and self.password:
-                self._client = og.Client(
-                    private_key=self.private_key,
-                    email=self.email,
-                    password=self.password,
-                )
-            else:
-                self._client = og.Client(private_key=self.private_key)
+            # New API: og.LLM — not og.Client
+            self._llm = og.LLM(private_key=self.private_key)
+
+            # Ensure Permit2 approval so payments work automatically
+            try:
+                approval = self._llm.ensure_opg_approval(opg_amount=10.0)
+                print(f"Permit2 approval OK — allowance: {getattr(approval, 'allowance_after', 'set')}")
+            except Exception as e:
+                print(f"Permit2 approval note: {e} — will attempt on first call")
 
             self._initialized = True
-            self.mode   = "OG_LIVE"
-            self.wallet = self.private_key[:8] + "..." + self.private_key[-4:]
-            print(f"✅ OpenGradient SDK initialized — LIVE MODE")
-            print(f"   Wallet : {self.wallet}")
-            print(f"   Models : {OG_MODELS[0]}")
+            self.mode         = "OG_LIVE"
+            self.wallet       = self.private_key[:8] + "..." + self.private_key[-4:]
+            print(f"OpenGradient SDK initialized — OG LIVE")
+            print(f"  Wallet: {self.wallet}")
+            print(f"  Model:  {DEFAULT_MODEL}")
 
         except ImportError:
-            print("❌ opengradient not installed — run: pip install opengradient")
+            print("opengradient not installed — run: pip install opengradient")
         except Exception as e:
-            print(f"⚠️  OG SDK init error: {e}")
-            print("   Falling back to Knowledge Mode")
+            print(f"OG SDK init error: {e}")
+            print("Falling back to Knowledge Mode")
 
     async def initialize(self):
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(self._executor, self._init_sdk)
-        print(f"   ProofGraph mode: {self.mode}")
-
-    # ── Core inference call ─────────────────────────────────────
-
-    def _call_og(self, messages: list, max_tokens: int) -> Dict[str, Any]:
-        """
-        Call og.Client.llm_chat(). Tries TEE first, falls back to VANILLA.
-
-        OG SDK returns:
-          TEE     → tuple: (ChatCompletionOutput, tx_hash_str)
-          VANILLA → ChatCompletionOutput  (single object)
-
-        ChatCompletionOutput.choices[0].message.content  → text
-        """
-        og   = self._og
-        cli  = self._client
-        last_err = None
-
-        for model in OG_MODELS:
-            try:
-                print(f"   → Calling OG [{model}] ...")
-
-                # ── Attempt TEE ───────────────────────────────
-                try:
-                    raw = cli.llm_chat(
-                        model_cid      = model,
-                        messages       = messages,
-                        inference_mode = og.LlmInferenceMode.TEE,
-                        max_tokens     = max_tokens,
-                        temperature    = 0.3,
-                    )
-                    content, tx_hash, payment_hash = self._parse_response(raw)
-                    mode     = "TEE"
-                    verified = True
-                    print(f"   ✅ TEE inference complete — tx: {tx_hash}")
-
-                except Exception as tee_err:
-                    if self._is_payment_error(tee_err):
-                        raise RuntimeError(f"PAYMENT_REQUIRED:{tee_err}")
-                    print(f"   ⚠️  TEE failed ({tee_err}), trying VANILLA...")
-
-                    raw = cli.llm_chat(
-                        model_cid      = model,
-                        messages       = messages,
-                        inference_mode = og.LlmInferenceMode.VANILLA,
-                        max_tokens     = max_tokens,
-                        temperature    = 0.3,
-                    )
-                    content, tx_hash, payment_hash = self._parse_response(raw)
-                    mode     = "VANILLA"
-                    verified = False
-                    print(f"   ✅ VANILLA inference complete")
-
-                if not content or len(content.strip()) < 5:
-                    raise ValueError("Empty response from OG")
-
-                return {
-                    "content":      content,
-                    "tx_hash":      tx_hash,
-                    "payment_hash": payment_hash,
-                    "model":        model,
-                    "mode":         mode,
-                    "verified":     verified,
-                    "timestamp":    datetime.utcnow().isoformat(),
-                    "source":       "opengradient_live",
-                }
-
-            except RuntimeError as e:
-                if "PAYMENT_REQUIRED" in str(e):
-                    raise
-                last_err = e
-                print(f"   ⚠️  {model} failed: {e}")
-                continue
-            except Exception as e:
-                last_err = e
-                print(f"   ⚠️  {model} error: {e}")
-                continue
-
-        raise RuntimeError(f"All OG models failed. Last error: {last_err}")
-
-    def _parse_response(self, raw) -> tuple:
-        """
-        Parse OG SDK response into (content, tx_hash, payment_hash).
-
-        Handles all known OG response formats:
-         - tuple(output, tx_hash)
-         - tuple(output, tx_hash, payment_hash)
-         - raw ChatCompletionOutput object
-         - dict with 'choices' key
-        """
-        tx_hash      = None
-        payment_hash = None
-        output       = raw
-
-        # Unpack tuple formats
-        if isinstance(raw, (tuple, list)):
-            if len(raw) >= 2:
-                output  = raw[0]
-                tx_hash = str(raw[1]) if raw[1] else None
-            if len(raw) >= 3:
-                payment_hash = str(raw[2]) if raw[2] else None
-
-        # Extract content
-        content = self._extract_content(output)
-
-        # Try pulling hashes from object attributes if not in tuple
-        if tx_hash is None:
-            tx_hash = (
-                getattr(output, "tx_hash", None) or
-                getattr(output, "transaction_hash", None)
-            )
-        if payment_hash is None:
-            payment_hash = (
-                getattr(output, "payment_hash", None) or
-                getattr(output, "payment_transaction_hash", None)
-            )
-
-        return content, tx_hash, payment_hash
-
-    def _extract_content(self, r) -> str:
-        """Extract text content from any OG/OpenAI-style response object."""
-        if r is None:
-            return ""
-        if isinstance(r, str):
-            return r
-
-        # OpenAI-style: choices[0].message.content
-        if hasattr(r, "choices") and r.choices:
-            try:
-                return r.choices[0].message.content or ""
-            except Exception:
-                pass
-
-        # Dict OpenAI-style
-        if isinstance(r, dict):
-            try:
-                return r["choices"][0]["message"]["content"]
-            except Exception:
-                return str(r.get("content", r.get("output", str(r))))
-
-        # Direct attributes
-        for attr in ("content", "output", "text", "completion"):
-            val = getattr(r, attr, None)
-            if val:
-                return str(val)
-
-        return str(r)
-
-    def _is_payment_error(self, err) -> bool:
-        msg = str(err).lower()
-        return any(x in msg for x in
-                   ["insufficient", "balance", "payment", "402", "funds", "no funds"])
-
-    # ── Public async interface ─────────────────────────────────
+        await loop.run_in_executor(None, self._init_sdk)
+        print(f"ProofGraph mode: {self.mode}")
 
     async def infer_tee(
         self,
-        prompt:        str,
+        prompt: str,
         system_prompt: str,
-        max_tokens:    int = 600,
+        max_tokens: int = 400,
     ) -> Dict[str, Any]:
         """
-        Main entry point. Uses live OG if wallet funded,
-        otherwise answers from knowledge base.
+        Run inference via OpenGradient TEE.
+        Falls back to local knowledge base if SDK not initialized.
         """
-        if self._initialized and self._client:
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": prompt},
-            ]
-            loop = asyncio.get_event_loop()
+        if self._initialized and self._llm:
             try:
                 return await asyncio.wait_for(
-                    loop.run_in_executor(
-                        self._executor,
-                        lambda: self._call_og(messages, max_tokens),
-                    ),
-                    timeout=45.0,  # fail fast — don't hang forever
+                    self._call_llm(prompt, system_prompt, max_tokens),
+                    timeout=60.0
                 )
             except asyncio.TimeoutError:
-                print("   ⚠️  OG call timed out (45s) — falling back for this call only")
-                # Do NOT flip self.mode — wallet may be funded, just a slow call
-            except RuntimeError as e:
-                if "PAYMENT_REQUIRED" in str(e):
-                    print("   ⚠️  Insufficient $OPG — this call falls back to knowledge")
-                    # Do NOT flip self.mode — user may top up between queries
-                else:
-                    print(f"   ⚠️  OG error: {e} — falling back for this call only")
-                    # Do NOT flip self.mode permanently
+                print("OG call timed out (60s) — using knowledge base for this call")
+            except Exception as e:
+                print(f"OG inference error: {e} — using knowledge base for this call")
 
         return self._knowledge_inference(prompt, system_prompt)
 
+    async def _call_llm(
+        self,
+        prompt: str,
+        system_prompt: str,
+        max_tokens: int,
+    ) -> Dict[str, Any]:
+        """
+        Call og.LLM.chat() with the current API.
+        result.chat_output['content'] -> text
+        result.payment_hash           -> payment hash string
+        """
+        og = self._og
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": prompt},
+        ]
+
+        # Determine which model enum to use
+        model = self._get_model()
+
+        result = await self._llm.chat(
+            model=model,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=0.3,
+        )
+
+        content      = self._extract_content(result)
+        payment_hash = getattr(result, "payment_hash", None)
+        # payment_hash acts as the tx hash in the new API
+        tx_hash      = str(payment_hash) if payment_hash else None
+
+        print(f"OG TEE inference complete — payment: {tx_hash}")
+
+        return {
+            "content":      content,
+            "tx_hash":      tx_hash,
+            "payment_hash": tx_hash,
+            "model":        DEFAULT_MODEL,
+            "mode":         "TEE",
+            "verified":     True,
+            "timestamp":    datetime.utcnow().isoformat(),
+            "source":       "opengradient_live",
+        }
+
+    def _get_model(self):
+        """Return the correct og.TEE_LLM enum for the default model."""
+        try:
+            og = self._og
+            # Try GPT-4.1 first (current default)
+            if hasattr(og, "TEE_LLM"):
+                tee = og.TEE_LLM
+                # Try each model name in preference order
+                for attr in ["GPT_4_1_2025_04_14", "GPT_5", "GPT_4_1", "CLAUDE_SONNET_4_6"]:
+                    if hasattr(tee, attr):
+                        return getattr(tee, attr)
+            # Fallback: return string model name (older SDK versions)
+            return DEFAULT_MODEL
+        except Exception:
+            return DEFAULT_MODEL
+
+    def _extract_content(self, result) -> str:
+        """Extract text from og.LLM response."""
+        if result is None:
+            return ""
+
+        # New API: result.chat_output is a dict with 'content' key
+        chat_output = getattr(result, "chat_output", None)
+        if chat_output:
+            if isinstance(chat_output, dict):
+                return chat_output.get("content", "") or ""
+            return str(chat_output)
+
+        # Fallback: completion output
+        completion_output = getattr(result, "completion_output", None)
+        if completion_output:
+            return str(completion_output)
+
+        # Fallback: OpenAI-style choices
+        if hasattr(result, "choices") and result.choices:
+            try:
+                return result.choices[0].message.content or ""
+            except Exception:
+                pass
+
+        # Last resort
+        for attr in ("content", "output", "text"):
+            val = getattr(result, attr, None)
+            if val:
+                return str(val)
+
+        return str(result)
+
     def _knowledge_inference(self, prompt: str, system_prompt: str) -> Dict[str, Any]:
-        """Structured answer from the local OG knowledge base."""
+        """Local knowledge base fallback — used when OG SDK is unavailable."""
         from og_knowledge import get_focused_answer
 
         answer = get_focused_answer(prompt)
 
         if not answer:
             answer = (
-                "OpenGradient is a decentralized AI infrastructure protocol — "
-                "a Layer 1 blockchain where every AI inference is cryptographically "
-                "proven on-chain. Products include TEE inference, x402 micropayments, "
-                "MemSync memory, Model Hub, BitQuant, and Twin.fun.\n\n"
-                "🌐 opengradient.ai  •  𝕏 x.com/OpenGradient  •  Discord: discord.gg/2t5sx5BCpB"
+                "OpenGradient is the first permissionless platform for open-source AI model "
+                "hosting, secure inference, agentic reasoning, and application deployment. "
+                "Every inference is cryptographically verified on-chain via TEE.\n\n"
+                "Website: opengradient.ai  |  Twitter: x.com/OpenGradient"
             )
 
         return {
@@ -302,7 +217,6 @@ class OGClient:
         }
 
 
-# ── Singleton ──────────────────────────────────────────────────
 _og_client: Optional[OGClient] = None
 
 
