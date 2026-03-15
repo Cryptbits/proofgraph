@@ -129,6 +129,10 @@ class GraphEngine:
         keywords = [w for w in question.lower().split() if w not in STOP_WORDS][:6]
 
         # Check for reusable verified nodes from previous sessions
+        # Reset twin router state for this session — prevents state from previous
+        # sessions bleeding into routing summary and the final "Verified by:" tag
+        self.router.pending_payments = []
+
         existing = await db.search_nodes_by_topic(keywords, limit=2)
         for en in existing:
             await db.increment_citation(en["id"])
