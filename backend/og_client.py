@@ -192,17 +192,34 @@ class OGClient:
         return str(result)
 
     def _knowledge_inference(self, prompt: str, system_prompt: str) -> Dict[str, Any]:
-        """Local knowledge base fallback — used when OG SDK is unavailable."""
+        """
+        Local fallback used when OG SDK is unavailable.
+        1. Extract the actual question from the prompt
+        2. Check KB for OG-specific topics
+        3. For general questions not in KB, return a clear message
+           rather than an incorrect generic answer
+        """
         from og_knowledge import get_focused_answer
 
-        answer = get_focused_answer(prompt)
+        # Extract just the Question: line — never run the full multi-line prompt
+        # through topic detection (it picks up noise keywords from role instructions)
+        question = prompt
+        for line in prompt.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("Question:"):
+                question = stripped.replace("Question:", "").strip()
+                break
+
+        answer = get_focused_answer(question)
 
         if not answer:
+            # General question not in the OG knowledge base.
+            # When OG SDK is live, this code never runs — the LLM answers everything.
+            # In Knowledge Mode, non-OG questions cannot be answered accurately offline.
             answer = (
-                "OpenGradient is the first permissionless platform for open-source AI model "
-                "hosting, secure inference, agentic reasoning, and application deployment. "
-                "Every inference is cryptographically verified on-chain via TEE.\n\n"
-                "Website: opengradient.ai  |  Twitter: x.com/OpenGradient"
+                "This requires live LLM inference to answer. "
+                "ProofGraph is running in Knowledge Mode — add OG_PRIVATE_KEY to enable "
+                "full TEE inference for any question."
             )
 
         return {

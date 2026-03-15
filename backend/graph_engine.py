@@ -1,6 +1,7 @@
 # graph_engine.py
-# ProofGraph core reasoning engine.
-# Every question runs through 3 parallel TEE-verified nodes then 1 synthesis node.
+# ProofGraph core reasoning pipeline.
+# 3 parallel TEE nodes + 1 synthesis node.
+# No knowledge base injection — LLM answers everything directly from OG system context.
 
 import uuid
 import asyncio
@@ -14,91 +15,74 @@ from models import (
 from og_client import get_og_client
 from memsync_client import get_memsync
 from twin_router import get_twin_router
-from og_knowledge import OG_SYSTEM_CONTEXT, get_focused_answer, _STOP
+from og_knowledge import OG_SYSTEM_CONTEXT, _STOP
 import database as db
 
-def _build_tasks(question: str, kb_anchor: str) -> list:
+
+def _build_tasks(question: str) -> list:
     """
-    Build 3 reasoning tasks with genuinely different angles.
-    Each task receives the KB anchor so the LLM stays on the correct topic,
-    but is asked to reason from a distinct perspective.
+    3 tasks with genuinely different angles on the question.
+    No shared context — each node reasons independently from its role.
     """
     q = question.strip().rstrip("?")
-
-    anchor_block = (
-        f"FACTUAL ANCHOR (verified knowledge — your answer must be consistent with this):\n"
-        f"{kb_anchor}\n\n"
-    ) if kb_anchor else ""
 
     return [
         {
             "type":  "analysis",
             "label": "Core Analysis",
+            "role":  "Technical analyst. Explain mechanisms, how it works, and the architecture.",
             "prompt": (
-                f"{anchor_block}"
                 f"Question: {q}\n\n"
-                "Your role: Explain HOW IT WORKS — the technical mechanisms, "
-                "architecture, and what makes it function. "
-                "Do not repeat the anchor verbatim — add depth and technical insight. "
-                "Under 160 words."
+                "Explain the core mechanisms and how this works technically. "
+                "What is it, how does it function, what makes it unique? "
+                "Be specific and expert-level. Under 160 words."
             ),
-            "role": "Technical analyst — explain mechanisms, architecture, and how things work.",
         },
         {
             "type":  "evidence",
             "label": "Evidence & Context",
+            "role":  "Research analyst. Provide facts, real examples, data, and real-world context.",
             "prompt": (
-                f"{anchor_block}"
                 f"Question: {q}\n\n"
-                "Your role: Provide REAL-WORLD EVIDENCE — concrete facts, data points, "
-                "comparisons, real examples, and what problems this solves. "
-                "Do not repeat the anchor verbatim — add real-world grounding. "
-                "Under 160 words."
+                "Provide the key facts, real-world evidence, and concrete examples. "
+                "What problems does this solve? What are the risks or limitations? "
+                "Be factual and grounded. Under 160 words."
             ),
-            "role": "Research analyst — provide facts, evidence, comparisons, and real-world context.",
         },
         {
             "type":  "conclusion",
             "label": "Key Takeaways",
+            "role":  "Strategic advisor. Give practical implications and actionable insights.",
             "prompt": (
-                f"{anchor_block}"
                 f"Question: {q}\n\n"
-                "Your role: Give the PRACTICAL IMPLICATIONS — what this means for users, "
-                "builders, and the ecosystem. What should someone do with this information? "
-                "Do not repeat the anchor verbatim — add actionable insight. "
-                "Under 160 words."
+                "What are the practical implications and bottom line? "
+                "What should someone do with this information? "
+                "What is the impact? Be direct and actionable. Under 160 words."
             ),
-            "role": "Strategic advisor — give practical implications and actionable insights.",
         },
     ]
 
-def _node_system_prompt(role: str, twin_persona: str) -> str:
+
+def _node_system(role: str, twin_persona: str) -> str:
     return (
         f"{OG_SYSTEM_CONTEXT}\n\n"
-        f"YOUR ROLE FOR THIS NODE:\n{role}\n\n"
+        f"YOUR ROLE: {role}\n\n"
         f"{twin_persona}\n\n"
-        "Rules:\n"
-        "- Stay on the specific topic in the question\n"
-        "- Do not mention unrelated OpenGradient products\n"
-        "- Do not copy the factual anchor word for word — build on it\n"
-        "- Be direct and expert-level\n"
-        "- Under 160 words"
+        "Answer the question directly from your role's perspective. "
+        "Under 160 words. No filler."
     )
+
 
 SYNTHESIS_SYSTEM = (
     f"{OG_SYSTEM_CONTEXT}\n\n"
-    "You are writing the final verified answer by synthesizing 3 expert analyses.\n\n"
-    "Rules:\n"
-    "- Answer ONLY the specific question asked — stay on topic\n"
-    "- If the question asks about OpenGradient the platform, answer about the platform\n"
-    "- If the question asks about a specific product, answer about that product\n"
-    "- Do not mix up the platform with its products (BitQuant, MemSync, Twin.fun, etc.)\n\n"
+    "Synthesize the 3 expert analyses into one clear final answer.\n\n"
     "Format:\n"
-    "Start with a direct 2-sentence answer.\n"
-    "Then 3 bullet points with key insights using the bullet character.\n"
-    "End with one bottom-line sentence.\n\n"
-    "Under 220 words. Clear and direct."
+    "2-sentence direct answer.\n"
+    "3 bullet points of key insights.\n"
+    "1 bottom-line sentence.\n\n"
+    "Stay on the topic of the question. Under 220 words."
 )
+
 
 class GraphEngine:
 
@@ -142,13 +126,9 @@ class GraphEngine:
             "message":    f"ProofGraph [{mode}] — starting 3-node pipeline...",
         })
 
-        return await self._parallel_pipeline(
-            question, session_id, wallet_address, send
-        )
+        return await self._pipeline(question, session_id, wallet_address, send)
 
-    async def _parallel_pipeline(
-        self, question, session_id, wallet_address, send
-    ) -> QuestionSession:
+    async def _pipeline(self, question, session_id, wallet_address, send):
 
         keywords = [w for w in question.lower().split() if w not in _STOP][:6]
 
@@ -157,15 +137,13 @@ class GraphEngine:
         for en in existing:
             await db.increment_citation(en["id"])
             await send(WSEventType.GRAPH_REUSE, {
-                "node_id": en["id"], "label": en["label"],
-                "message": f"Reusing: {en['label']}",
+                "node_id": en["id"],
+                "label":   en["label"],
+                "message": f"Reusing verified node: {en['label']}",
             })
 
-        # Get the verified KB answer to use as a factual anchor in each node
-        kb_anchor = get_focused_answer(question)
-
-        # Build 3 tasks — each with the KB anchor to prevent topic drift
-        tasks = _build_tasks(question, kb_anchor)
+        # Build 3 independent tasks — no shared KB context
+        tasks = _build_tasks(question)
 
         # Route each task to the most relevant Digital Twin
         twins = [
@@ -175,11 +153,11 @@ class GraphEngine:
 
         twin_names = list(dict.fromkeys(t["name"] for t in twins))
         await send(WSEventType.SESSION_START, {
-            "session_id": session_id, "question": question,
-            "message": f"Consulting: {', '.join(twin_names)} — running in parallel...",
+            "session_id": session_id,
+            "question":   question,
+            "message":    f"Consulting: {', '.join(twin_names)} — running in parallel...",
         })
 
-        # Announce all nodes as pending immediately so UI shows activity
         node_ids = [str(uuid.uuid4()) for _ in tasks]
         for i, (task, twin, node_id) in enumerate(zip(tasks, twins, node_ids)):
             await send(WSEventType.NODE_PENDING, {
@@ -192,9 +170,8 @@ class GraphEngine:
                 "message":   f"{twin['name']}: {task['label']}",
             })
 
-        # Run all 3 inference nodes in parallel
         async def run_node(i: int, task: dict, twin: dict, node_id: str):
-            system_prompt = _node_system_prompt(
+            system_prompt = _node_system(
                 role=task["role"],
                 twin_persona=twin.get("persona", "")
             )
@@ -252,7 +229,7 @@ class GraphEngine:
               for i, (task, twin, nid) in enumerate(zip(tasks, twins, node_ids))]
         )
 
-        # Final synthesis — combines all 3 node outputs into one verified answer
+        # Final synthesis
         await send(WSEventType.NODE_PENDING, {
             "node_id":  "synthesis",
             "label":    "Final Synthesis",
@@ -267,8 +244,6 @@ class GraphEngine:
             f"[EVIDENCE AND CONTEXT]\n{minted[1].content[:260]}\n\n"
             f"[KEY TAKEAWAYS]\n{minted[2].content[:260]}"
         )
-        if kb_anchor:
-            synth_prompt += f"\n\n[VERIFIED KNOWLEDGE BASE]\n{kb_anchor[:300]}"
 
         synth = await self.og.infer_tee(
             prompt=synth_prompt,
@@ -348,6 +323,7 @@ class GraphEngine:
     def _confidence(self, nodes: List[ReasoningNode]) -> float:
         v = sum(1 for n in nodes if n.tee_proof and n.tee_proof.verified)
         return round(0.70 + (v / max(len(nodes), 1)) * 0.27, 2)
+
 
 _engine: Optional[GraphEngine] = None
 
