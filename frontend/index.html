@@ -1,0 +1,1914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>ProofGraph — Verifiable Intelligence on OpenGradient</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+:root {
+  --void:    #030308;
+  --deep:    #060612;
+  --surface: #0a0a1f;
+  --glass:   rgba(255,255,255,0.03);
+  --rim:     rgba(255,255,255,0.06);
+  --rim2:    rgba(99,102,241,0.22);
+  --violet:  #7c3aed;
+  --indigo:  #6366f1;
+  --sky:     #38bdf8;
+  --teal:    #2dd4bf;
+  --emerald: #10b981;
+  --gold:    #f59e0b;
+  --rose:    #fb7185;
+  --ink:     #f8fafc;
+  --ink2:    #94a3b8;
+  --ink3:    #475569;
+  --ink4:    #1e293b;
+  --display: 'Syne', sans-serif;
+  --body:    'DM Sans', sans-serif;
+  --code:    'DM Mono', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 14px;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Ambient background glow */
+body::before {
+  content: '';
+  position: fixed;
+  top: -20%;
+  left: 30%;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(99,102,241,0.06) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  bottom: -10%;
+  right: 10%;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(45,212,191,0.04) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* NAV */
+nav {
+  position: relative;
+  z-index: 100;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  border-bottom: 1px solid var(--rim);
+  background: rgba(3,3,8,0.92);
+  backdrop-filter: blur(24px);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+}
+
+/* ProofGraph logo mark — hexagon with P */
+.logo-hex {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+}
+
+.logo-hex svg {
+  width: 38px;
+  height: 38px;
+  filter: drop-shadow(0 0 8px rgba(99,102,241,0.5));
+}
+
+.logo-wordmark {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--ink);
+  line-height: 1;
+}
+
+.logo-wordmark em {
+  font-style: normal;
+  background: linear-gradient(135deg, var(--indigo), var(--teal));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.logo-sub {
+  font-family: var(--code);
+  font-size: 9px;
+  font-weight: 300;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink3);
+  margin-top: 2px;
+}
+
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.og-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 100px;
+  border: 1px solid var(--rim);
+  background: var(--glass);
+  transition: all 0.4s;
+}
+
+.og-indicator.live {
+  border-color: rgba(16,185,129,0.25);
+  background: rgba(16,185,129,0.06);
+}
+
+.og-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink3);
+  transition: background 0.4s, box-shadow 0.4s;
+  flex-shrink: 0;
+}
+
+.og-dot.live {
+  background: var(--emerald);
+  box-shadow: 0 0 0 3px rgba(16,185,129,0.15), 0 0 10px rgba(16,185,129,0.4);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(16,185,129,0.15), 0 0 10px rgba(16,185,129,0.4); }
+  50%       { box-shadow: 0 0 0 6px rgba(16,185,129,0.08), 0 0 16px rgba(16,185,129,0.6); }
+}
+
+.og-label {
+  font-family: var(--code);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink3);
+  transition: color 0.4s;
+  white-space: nowrap;
+}
+
+.og-label.live { color: var(--emerald); }
+
+/* LAYOUT */
+.workspace {
+  display: grid;
+  grid-template-columns: 348px 1fr 308px;
+  height: calc(100vh - 60px);
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+
+/* LEFT PANEL */
+.panel-left {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--rim);
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--deep) 0%, var(--void) 100%);
+}
+
+.panel-head {
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--rim);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panel-eyebrow {
+  font-family: var(--code);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink3);
+}
+
+.stack-badge {
+  font-family: var(--code);
+  font-size: 9px;
+  font-weight: 400;
+  color: var(--indigo);
+  background: rgba(99,102,241,0.1);
+  border: 1px solid rgba(99,102,241,0.18);
+  padding: 3px 9px;
+  border-radius: 100px;
+  letter-spacing: 0.04em;
+}
+
+/* MODE CALLOUT */
+.mode-callout {
+  margin: 10px 14px 0;
+  padding: 11px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--ink2);
+  border: 1px solid;
+  flex-shrink: 0;
+  display: none;
+}
+
+.mode-callout.visible { display: block; }
+
+.mode-callout.kb {
+  background: rgba(245,158,11,0.05);
+  border-color: rgba(245,158,11,0.18);
+}
+
+.mode-callout.kb strong { color: var(--gold); font-weight: 600; }
+
+.mode-callout.live {
+  background: rgba(16,185,129,0.05);
+  border-color: rgba(16,185,129,0.18);
+}
+
+.mode-callout.live strong { color: var(--emerald); font-weight: 600; }
+
+.mode-callout code {
+  font-family: var(--code);
+  font-size: 10px;
+  background: rgba(99,102,241,0.1);
+  color: var(--indigo);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* QUERY INPUT */
+.query-wrap {
+  padding: 14px;
+  border-bottom: 1px solid var(--rim);
+  flex-shrink: 0;
+}
+
+.query-label {
+  font-family: var(--code);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink3);
+  margin-bottom: 9px;
+}
+
+textarea#qi {
+  width: 100%;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid var(--rim);
+  border-radius: 12px;
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 13.5px;
+  font-weight: 400;
+  line-height: 1.65;
+  padding: 12px 14px;
+  resize: none;
+  outline: none;
+  transition: border-color 0.25s;
+}
+
+textarea#qi:focus { border-color: rgba(99,102,241,0.4); }
+
+textarea#qi::placeholder {
+  color: var(--ink3);
+  font-weight: 300;
+}
+
+.wallet-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.wallet-field {
+  flex: 1;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--rim);
+  border-radius: 9px;
+  color: var(--ink2);
+  font-family: var(--code);
+  font-size: 10.5px;
+  padding: 8px 11px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.wallet-field::placeholder { color: var(--ink3); }
+.wallet-field:focus { border-color: var(--rim2); }
+
+.btn-wallet {
+  background: rgba(99,102,241,0.08);
+  border: 1px solid rgba(99,102,241,0.22);
+  border-radius: 9px;
+  color: var(--indigo);
+  font-family: var(--body);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 8px 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.btn-wallet:hover { background: rgba(99,102,241,0.16); }
+.btn-wallet.connected { color: var(--emerald); border-color: rgba(16,185,129,0.25); }
+
+.btn-run {
+  width: 100%;
+  margin-top: 10px;
+  padding: 13px;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(99,102,241,0.16) 0%, rgba(45,212,191,0.1) 100%);
+  border: 1px solid rgba(99,102,241,0.32);
+  border-radius: 12px;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: all 0.25s;
+}
+
+.btn-run::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(99,102,241,0.24), rgba(45,212,191,0.16));
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+.btn-run:hover::before { opacity: 1; }
+.btn-run:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-run:disabled::before { display: none; }
+
+.btn-run span { position: relative; z-index: 1; }
+
+.shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.05) 50%, transparent 100%);
+  animation: shim 2.5s ease-in-out infinite;
+}
+
+@keyframes shim { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
+/* PROGRESS */
+.progress-wrap {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rim);
+  flex-shrink: 0;
+}
+
+.progress-track {
+  height: 2px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--indigo) 0%, var(--teal) 100%);
+  border-radius: 2px;
+  width: 0%;
+  transition: width 0.5s ease;
+}
+
+.progress-text {
+  font-family: var(--code);
+  font-size: 10.5px;
+  font-weight: 300;
+  color: var(--ink3);
+  margin-top: 5px;
+  height: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* STEP FEED */
+.feed {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.feed-empty {
+  margin: auto;
+  text-align: center;
+  padding: 40px 20px;
+  font-family: var(--code);
+  font-size: 11px;
+  font-weight: 300;
+  color: var(--ink3);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.4;
+}
+
+.step {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--rim);
+  border-radius: 11px;
+  padding: 11px 13px;
+  animation: stepAppear 0.22s cubic-bezier(0.4,0,0.2,1) forwards;
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+@keyframes stepAppear { to { opacity: 1; transform: translateY(0); } }
+
+.step.pending  { border-left: 2px solid var(--gold); }
+.step.verified { border-left: 2px solid var(--emerald); }
+.step.reused   { border-left: 2px solid var(--violet); }
+
+.step-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.step-chip {
+  font-family: var(--code);
+  font-size: 9.5px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 100px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.step-chip.analysis   { background: rgba(124,58,237,0.12); color: #a78bfa; }
+.step-chip.evidence   { background: rgba(245,158,11,0.12); color: var(--gold); }
+.step-chip.conclusion { background: rgba(16,185,129,0.1);  color: var(--emerald); }
+.step-chip.synthesis  { background: rgba(56,189,248,0.1);  color: var(--sky); }
+.step-chip.question   { background: rgba(99,102,241,0.12); color: var(--indigo); }
+.step-chip.pending    { background: rgba(245,158,11,0.08); color: var(--gold); }
+.step-chip.reused     { background: rgba(124,58,237,0.08); color: #a78bfa; }
+
+.step-icon { font-size: 12px; }
+.step-icon.ok   { color: var(--emerald); }
+.step-icon.wait { color: var(--gold); animation: rotateSlow 1.5s linear infinite; }
+
+@keyframes rotateSlow { to { transform: rotate(360deg); } }
+
+.step-label {
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 3px;
+  letter-spacing: -0.01em;
+}
+
+.step-twin {
+  font-family: var(--code);
+  font-size: 10px;
+  font-weight: 300;
+  color: var(--indigo);
+  margin-bottom: 4px;
+}
+
+.step-body {
+  font-size: 12px;
+  font-weight: 300;
+  color: var(--ink2);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.step-proof {
+  margin-top: 7px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.proof-chip {
+  font-family: var(--code);
+  font-size: 9.5px;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(16,185,129,0.1);
+  color: var(--emerald);
+  border: 1px solid rgba(16,185,129,0.18);
+  letter-spacing: 0.04em;
+}
+
+.proof-hash {
+  font-family: var(--code);
+  font-size: 9.5px;
+  font-weight: 300;
+  color: var(--sky);
+  text-decoration: none;
+}
+
+.proof-hash:hover { text-decoration: underline; }
+
+/* CENTER */
+.panel-center {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  background: var(--void);
+}
+
+.graph-topbar {
+  height: 52px;
+  border-bottom: 1px solid var(--rim);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 22px;
+  flex-shrink: 0;
+  background: rgba(3,3,8,0.7);
+}
+
+.graph-heading {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+
+.graph-heading em {
+  font-style: normal;
+  color: var(--teal);
+}
+
+.graph-counters {
+  display: flex;
+  gap: 20px;
+}
+
+.counter {
+  font-family: var(--code);
+  font-size: 11px;
+  font-weight: 300;
+  color: var(--ink3);
+}
+
+.counter b {
+  font-weight: 500;
+  color: var(--sky);
+  font-size: 12px;
+}
+
+.graph-actions { display: flex; gap: 6px; }
+
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  border: 1px solid var(--rim);
+  background: transparent;
+  color: var(--ink3);
+  font-size: 14px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: all 0.18s;
+}
+
+.icon-btn:hover {
+  color: var(--teal);
+  border-color: rgba(45,212,191,0.25);
+  background: rgba(45,212,191,0.06);
+}
+
+.graph-canvas {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.graph-zero {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  pointer-events: none;
+}
+
+.zero-mark {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 1px solid rgba(99,102,241,0.1);
+  display: grid;
+  place-items: center;
+  animation: breathe 3s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%, 100% { border-color: rgba(99,102,241,0.08); }
+  50%       { border-color: rgba(99,102,241,0.22); }
+}
+
+.zero-inner {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(45,212,191,0.12);
+  display: grid;
+  place-items: center;
+  font-family: var(--code);
+  font-size: 14px;
+  color: rgba(45,212,191,0.25);
+  animation: breathe 3s ease-in-out infinite 0.5s;
+}
+
+.zero-title {
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink3);
+  opacity: 0.35;
+  letter-spacing: 0.03em;
+}
+
+.zero-hint {
+  font-size: 12px;
+  font-weight: 300;
+  color: var(--ink3);
+  opacity: 0.2;
+  text-align: center;
+  max-width: 200px;
+  line-height: 1.5;
+}
+
+#gsvg { width: 100%; height: 100%; display: block; }
+
+/* RIGHT PANEL */
+.panel-right {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--rim);
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--deep) 0%, var(--void) 100%);
+}
+
+.tab-row {
+  display: flex;
+  border-bottom: 1px solid var(--rim);
+  flex-shrink: 0;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 14px 0;
+  text-align: center;
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--ink3);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+}
+
+.tab-btn.on {
+  color: var(--indigo);
+  border-bottom-color: var(--indigo);
+}
+
+.tab-view {
+  display: none;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.tab-view.on { display: flex; }
+
+.node-zero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 30px;
+  text-align: center;
+}
+
+.node-zero-icon {
+  font-size: 28px;
+  opacity: 0.07;
+}
+
+.node-zero-text {
+  font-family: var(--code);
+  font-size: 10px;
+  font-weight: 300;
+  letter-spacing: 0.08em;
+  opacity: 0.28;
+  text-transform: uppercase;
+  color: var(--ink3);
+  line-height: 1.6;
+}
+
+#node-detail { overflow-y: auto; }
+
+.nd-wrap { padding: 18px; }
+
+.nd-name {
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 5px;
+  letter-spacing: -0.03em;
+  line-height: 1.3;
+}
+
+.nd-chip {
+  font-family: var(--code);
+  font-size: 9.5px;
+  font-weight: 500;
+  padding: 2px 9px;
+  border-radius: 100px;
+  display: inline-block;
+  margin-bottom: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.nd-chip.analysis   { background: rgba(124,58,237,0.12); color: #a78bfa; }
+.nd-chip.evidence   { background: rgba(245,158,11,0.12); color: var(--gold); }
+.nd-chip.synthesis  { background: rgba(56,189,248,0.1);  color: var(--sky); }
+.nd-chip.conclusion { background: rgba(16,185,129,0.1);  color: var(--emerald); }
+
+.nd-label {
+  font-family: var(--code);
+  font-size: 9.5px;
+  font-weight: 500;
+  color: var(--ink3);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin: 12px 0 5px;
+}
+
+.nd-value {
+  font-size: 12.5px;
+  font-weight: 300;
+  color: var(--ink2);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--rim);
+  border-radius: 9px;
+  padding: 10px 12px;
+}
+
+.proof-plate {
+  background: rgba(16,185,129,0.04);
+  border: 1px solid rgba(16,185,129,0.14);
+  border-radius: 11px;
+  padding: 13px;
+  margin-top: 12px;
+}
+
+.proof-line {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  margin-bottom: 6px;
+  gap: 8px;
+}
+
+.proof-line:last-child { margin: 0; }
+
+.pkey {
+  font-family: var(--code);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--ink3);
+  flex-shrink: 0;
+}
+
+.pval {
+  font-family: var(--code);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--emerald);
+  word-break: break-all;
+  text-align: right;
+}
+
+.og-explorer-link {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 9px;
+  text-align: center;
+  background: rgba(16,185,129,0.07);
+  border: 1px solid rgba(16,185,129,0.18);
+  border-radius: 9px;
+  color: var(--emerald);
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+
+.og-explorer-link:hover { background: rgba(16,185,129,0.14); }
+
+.hist-list { padding: 10px; display: flex; flex-direction: column; gap: 7px; }
+
+.hist-card {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--rim);
+  border-radius: 11px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.hist-card:hover { border-color: var(--rim2); }
+
+.hist-question {
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 6px;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
+
+.hist-meta {
+  font-family: var(--code);
+  font-size: 10px;
+  font-weight: 300;
+  color: var(--ink3);
+  display: flex;
+  gap: 12px;
+}
+
+.hist-meta span { color: var(--indigo); }
+
+/* ANSWER OVERLAY */
+.answer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0,0,0,0.87);
+  backdrop-filter: blur(24px) saturate(1.2);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.answer-overlay.open { display: flex; }
+
+.answer-sheet {
+  width: 100%;
+  max-width: 780px;
+  background: linear-gradient(145deg, var(--surface) 0%, var(--deep) 100%);
+  border: 1px solid rgba(99,102,241,0.25);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow:
+    0 50px 120px rgba(0,0,0,0.7),
+    0 0 0 1px rgba(255,255,255,0.03),
+    0 0 80px rgba(99,102,241,0.06);
+  animation: sheetRise 0.35s cubic-bezier(0.34,1.56,0.64,1) forwards;
+}
+
+@keyframes sheetRise {
+  from { transform: scale(0.92) translateY(24px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
+.sheet-top {
+  padding: 24px 28px 20px;
+  border-bottom: 1px solid var(--rim);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sheet-meta { flex: 1; }
+
+.sheet-tag {
+  font-family: var(--code);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.sheet-tag.live  { color: var(--emerald); }
+.sheet-tag.kb    { color: var(--gold); }
+
+.sheet-question {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1.3;
+  letter-spacing: -0.03em;
+}
+
+.btn-dismiss {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid var(--rim);
+  background: transparent;
+  color: var(--ink3);
+  font-size: 18px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  transition: all 0.2s;
+  line-height: 1;
+}
+
+.btn-dismiss:hover { color: var(--ink); border-color: var(--rim2); }
+
+.sheet-body {
+  padding: 24px 28px;
+  max-height: 66vh;
+  overflow-y: auto;
+}
+
+.answer-copy {
+  font-family: var(--body);
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1.9;
+  color: var(--ink);
+  white-space: pre-wrap;
+  margin-bottom: 24px;
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(4,1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.stat-tile {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid var(--rim);
+  border-radius: 12px;
+  padding: 14px;
+  text-align: center;
+}
+
+.stat-num {
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--sky);
+  line-height: 1;
+  margin-bottom: 4px;
+  letter-spacing: -0.04em;
+}
+
+.stat-lbl {
+  font-family: var(--code);
+  font-size: 9.5px;
+  font-weight: 400;
+  color: var(--ink3);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.payment-strip {
+  padding: 12px 16px;
+  border-radius: 11px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 12.5px;
+  font-weight: 300;
+  color: var(--ink2);
+  line-height: 1.65;
+  border: 1px solid;
+}
+
+.payment-strip.paid {
+  background: rgba(16,185,129,0.05);
+  border-color: rgba(16,185,129,0.16);
+}
+
+.payment-strip.active {
+  background: rgba(99,102,241,0.05);
+  border-color: rgba(99,102,241,0.16);
+}
+
+.payment-strip.standby {
+  background: rgba(245,158,11,0.04);
+  border-color: rgba(245,158,11,0.14);
+}
+
+.pay-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+
+/* TOASTS */
+.toast-shelf {
+  position: fixed;
+  bottom: 22px;
+  right: 22px;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  padding: 11px 16px;
+  border-radius: 11px;
+  font-family: var(--body);
+  font-size: 13px;
+  font-weight: 400;
+  animation: toastSlide 0.22s ease-out forwards;
+  pointer-events: all;
+}
+
+@keyframes toastSlide { from { transform: translateX(16px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.toast.success { background: rgba(16,185,129,0.12); border: 1px solid rgba(16,185,129,0.28); color: var(--emerald); }
+.toast.error   { background: rgba(251,113,133,0.12); border: 1px solid rgba(251,113,133,0.28); color: var(--rose); }
+.toast.info    { background: rgba(99,102,241,0.1);   border: 1px solid rgba(99,102,241,0.24);  color: var(--indigo); }
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.14); border-radius: 2px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+@media (max-width: 1100px) {
+  .workspace { grid-template-columns: 340px 1fr; }
+  .panel-right { display: none; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">
+    <div class="logo-hex">
+      <svg viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="hg" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#6366f1"/>
+            <stop offset="100%" stop-color="#2dd4bf"/>
+          </linearGradient>
+          <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#6366f1" stop-opacity="0.15"/>
+            <stop offset="100%" stop-color="#2dd4bf" stop-opacity="0.08"/>
+          </linearGradient>
+        </defs>
+        <!-- Hexagon shape -->
+        <path d="M19 3L33 11V27L19 35L5 27V11Z" fill="url(#bg)" stroke="url(#hg)" stroke-width="1.2"/>
+        <!-- Inner hex -->
+        <path d="M19 9L28 14V24L19 29L10 24V14Z" fill="none" stroke="url(#hg)" stroke-width="0.6" stroke-opacity="0.4"/>
+        <!-- P letterform -->
+        <text x="14" y="24" font-family="Syne, sans-serif" font-size="13" font-weight="800" fill="url(#hg)">P</text>
+        <!-- Nodes -->
+        <circle cx="19" cy="3" r="2" fill="#6366f1"/>
+        <circle cx="33" cy="11" r="2" fill="#2dd4bf"/>
+        <circle cx="33" cy="27" r="2" fill="#6366f1"/>
+        <circle cx="19" cy="35" r="2" fill="#2dd4bf"/>
+        <circle cx="5"  cy="27" r="2" fill="#6366f1"/>
+        <circle cx="5"  cy="11" r="2" fill="#2dd4bf"/>
+      </svg>
+    </div>
+    <div>
+      <div class="logo-wordmark">Proof<em>Graph</em></div>
+      <div class="logo-sub">Verifiable Intelligence on OpenGradient</div>
+    </div>
+  </div>
+
+  <div class="nav-right">
+    <div class="og-indicator" id="og-indicator">
+      <div class="og-dot" id="og-dot"></div>
+      <span class="og-label" id="og-label">Connecting...</span>
+    </div>
+  </div>
+</nav>
+
+<div class="workspace">
+
+  <div class="panel-left">
+    <div class="panel-head">
+      <span class="panel-eyebrow">Query Engine</span>
+      <span class="stack-badge">TEE · x402 · MemSync · Twin.fun</span>
+    </div>
+
+    <div class="mode-callout kb" id="mode-callout">
+      <strong>Knowledge Mode</strong> — Add <code>OG_PRIVATE_KEY</code> to <code>backend/.env</code> and restart to enable live TEE inference and x402 auto-payments.
+    </div>
+
+    <div class="query-wrap">
+      <div class="query-label">Ask the verifiable intelligence graph</div>
+      <textarea id="qi" rows="4" placeholder="What is OpenGradient and how does TEE inference work?"></textarea>
+      <div class="wallet-row">
+        <input class="wallet-field" id="wi" type="text" placeholder="0x wallet address (optional)"/>
+        <button class="btn-wallet" id="btn-wallet" onclick="connectWallet()">Connect Wallet</button>
+      </div>
+      <button class="btn-run" id="btn-run" onclick="submitQuery()">
+        <div class="shimmer"></div>
+        <span>Run Verifiable Reasoning</span>
+      </button>
+    </div>
+
+    <div class="progress-wrap">
+      <div class="progress-track">
+        <div class="progress-bar" id="progress-bar"></div>
+      </div>
+      <div class="progress-text" id="progress-text">Ready</div>
+    </div>
+
+    <div class="feed" id="feed">
+      <div class="feed-empty" id="feed-empty">Reasoning nodes will appear here</div>
+    </div>
+  </div>
+
+  <div class="panel-center">
+    <div class="graph-topbar">
+      <div class="graph-heading">Intelligence <em>Graph</em></div>
+      <div class="graph-counters">
+        <div class="counter">Nodes <b id="gc-nodes">0</b></div>
+        <div class="counter">Verified <b id="gc-verified">0</b></div>
+        <div class="counter">Citations <b id="gc-citations">0</b></div>
+      </div>
+      <div class="graph-actions">
+        <button class="icon-btn" onclick="resetZoom()" title="Reset view">&#8857;</button>
+        <button class="icon-btn" onclick="clearAndRefresh()" title="Refresh">&#8635;</button>
+      </div>
+    </div>
+    <div class="graph-canvas">
+      <div class="graph-zero" id="graph-zero">
+        <div class="zero-mark">
+          <div class="zero-inner">&#9674;</div>
+        </div>
+        <div class="zero-title">Knowledge Graph Empty</div>
+        <div class="zero-hint">Submit a query to mint your first verified reasoning nodes</div>
+      </div>
+      <svg id="gsvg"></svg>
+    </div>
+  </div>
+
+  <div class="panel-right">
+    <div class="tab-row">
+      <button class="tab-btn on" id="tab-node-btn" onclick="switchTab('node')">Node Detail</button>
+      <button class="tab-btn"    id="tab-hist-btn" onclick="switchTab('hist')">History</button>
+    </div>
+
+    <div class="tab-view on" id="tab-node">
+      <div class="node-zero" id="node-zero">
+        <div class="node-zero-icon">&#9672;</div>
+        <div class="node-zero-text">Click a graph node to<br>view its TEE proof details</div>
+      </div>
+      <div id="node-detail" style="display:none;"></div>
+    </div>
+
+    <div class="tab-view" id="tab-hist">
+      <div class="hist-list" id="hist-list">
+        <div style="text-align:center;padding:48px 20px;font-family:var(--code);font-size:10px;font-weight:300;color:var(--ink3);opacity:0.3;text-transform:uppercase;letter-spacing:0.08em">No sessions yet</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="answer-overlay" id="answer-overlay" onclick="if(event.target===this)closeAnswer()">
+  <div class="answer-sheet">
+    <div class="sheet-top">
+      <div class="sheet-meta">
+        <div class="sheet-tag kb" id="sheet-tag">Verified Answer</div>
+        <div class="sheet-question" id="sheet-question"></div>
+      </div>
+      <button class="btn-dismiss" onclick="closeAnswer()">&#215;</button>
+    </div>
+    <div class="sheet-body">
+      <div class="answer-copy" id="answer-copy"></div>
+      <div class="stats-row">
+        <div class="stat-tile">
+          <div class="stat-num" id="stat-nodes">0</div>
+          <div class="stat-lbl">Nodes Minted</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-num" id="stat-proofs">0</div>
+          <div class="stat-lbl">TEE Proofs</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-num" id="stat-conf">0%</div>
+          <div class="stat-lbl">Confidence</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-num" id="stat-twins">0</div>
+          <div class="stat-lbl">Twins Used</div>
+        </div>
+      </div>
+      <div class="payment-strip standby" id="payment-strip">
+        <span class="pay-icon" id="pay-icon">&#9889;</span>
+        <div id="pay-text">Checking payment status...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-shelf" id="toasts"></div>
+
+<script>
+const API = (typeof window.PROOFGRAPH_API !== 'undefined' && window.PROOFGRAPH_API)
+  ? window.PROOFGRAPH_API
+  : (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://localhost:8000'
+    : '';
+
+let ws          = null;
+let curSession  = null;
+let ogMode      = 'KNOWLEDGE';
+let popupShown  = false;
+let pollTimer   = null;
+let liveNodes   = [];
+let liveLinks   = [];
+let fullGraph   = { nodes: [], links: [] };
+let sim         = null;
+let svgSel, rootG, linkLayer, nodeLayer, zoomHandler;
+let gW = 600, gH = 400;
+let graphInit   = false;
+
+const COLORS = {
+  question:'#6366f1', analysis:'#a78bfa', evidence:'#f59e0b',
+  synthesis:'#2dd4bf', conclusion:'#10b981', default:'#475569'
+};
+const ICONS = {
+  question:'Q', analysis:'A', evidence:'E',
+  synthesis:'S', conclusion:'C', default:'G'
+};
+
+function setOGStatus(mode, wallet) {
+  ogMode = mode;
+  const live = mode === 'OG_LIVE';
+  const dot  = document.getElementById('og-dot');
+  const lbl  = document.getElementById('og-label');
+  const ind  = document.getElementById('og-indicator');
+  const cal  = document.getElementById('mode-callout');
+
+  dot.className = 'og-dot' + (live ? ' live' : '');
+  lbl.textContent = live
+    ? 'Connected to OG TEE' + (wallet ? '  ' + wallet.slice(0,8) + '...' : '')
+    : 'Knowledge Mode';
+  lbl.className = 'og-label' + (live ? ' live' : '');
+  ind.className = 'og-indicator' + (live ? ' live' : '');
+
+  cal.className = 'mode-callout visible ' + (live ? 'live' : 'kb');
+  cal.innerHTML = live
+    ? '<strong>OG LIVE</strong> — TEE inference active. x402 auto-payments enabled. Proofs settling on Nova Testnet.'
+    : '<strong>Knowledge Mode</strong> — Add <code>OG_PRIVATE_KEY</code> to <code>backend/.env</code> and restart for live TEE inference and x402 payments.';
+}
+
+async function checkHealth() {
+  try {
+    const r = await fetch(`${API}/api/health`, { cache: 'no-store' });
+    const d = await r.json();
+    setOGStatus(d.mode || 'KNOWLEDGE', d.wallet);
+    if (d.stats) refreshCounters(d.stats);
+  } catch {
+    document.getElementById('og-label').textContent = 'Backend offline';
+    document.getElementById('og-dot').className    = 'og-dot';
+  }
+}
+
+function setProgress(pct, text) {
+  document.getElementById('progress-bar').style.width = pct + '%';
+  if (text !== undefined) document.getElementById('progress-text').textContent = text;
+}
+
+function switchTab(name) {
+  ['node','hist'].forEach(n => {
+    document.getElementById('tab-' + n).classList.toggle('on', n === name);
+    document.getElementById('tab-' + n + '-btn').classList.toggle('on', n === name);
+  });
+}
+
+function notify(msg, type = 'info') {
+  const el = document.createElement('div');
+  el.className   = 'toast ' + type;
+  el.textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 4500);
+}
+
+function reenableRun() {
+  const b = document.getElementById('btn-run');
+  b.disabled = false;
+  b.innerHTML = '<div class="shimmer"></div><span>Run Verifiable Reasoning</span>';
+}
+
+async function connectWallet() {
+  const btn = document.getElementById('btn-wallet');
+  if (!window.ethereum) { notify('MetaMask not found. Paste address manually.', 'error'); return; }
+  try {
+    btn.textContent = 'Connecting...';
+    btn.disabled = true;
+    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    document.getElementById('wi').value = accounts[0];
+    btn.textContent = accounts[0].slice(0,6) + '...' + accounts[0].slice(-4);
+    btn.classList.add('connected');
+    btn.disabled = false;
+    notify('Wallet connected', 'success');
+  } catch {
+    btn.textContent = 'Connect Wallet';
+    btn.disabled = false;
+  }
+}
+
+function clearFeed() {
+  document.getElementById('feed').innerHTML =
+    '<div class="feed-empty" id="feed-empty">Reasoning nodes will appear here</div>';
+}
+
+function addStep(o) {
+  const feed = document.getElementById('feed');
+  const emp  = document.getElementById('feed-empty');
+  if (emp) emp.remove();
+  const el  = document.createElement('div');
+  el.id     = 'step-' + (o.nodeId || Math.random().toString(36).slice(2));
+  el.className = 'step ' + (o.status || 'pending');
+  const chip = o.type || o.status || 'pending';
+  const isPending = o.status === 'pending';
+  el.innerHTML = `
+    <div class="step-header">
+      <span class="step-chip ${chip}">${chip}</span>
+      <span class="step-icon ${isPending ? 'wait' : 'ok'}">${isPending ? '&#9685;' : o.status === 'reused' ? '&#8617;' : '&#10003;'}</span>
+    </div>
+    <div class="step-label">${o.label || ''}</div>
+    ${o.twin ? `<div class="step-twin">${o.twin}</div>` : ''}
+    <div class="step-body">${o.preview || ''}</div>
+    ${o.proof && o.proof.tx_hash ? `
+      <div class="step-proof">
+        <span class="proof-chip">TEE Verified</span>
+        <a class="proof-hash" href="https://explorer.opengradient.ai/tx/${o.proof.tx_hash}" target="_blank">
+          ${o.proof.tx_hash.slice(0,18)}... &#8599;
+        </a>
+      </div>` : ''}`;
+  feed.appendChild(el);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function upgradeStep(nodeId, o) {
+  const feed = document.getElementById('feed');
+  let el = document.getElementById('step-' + nodeId);
+  if (!el) {
+    const pending = feed.querySelectorAll('.step.pending');
+    el = pending[pending.length - 1];
+  }
+  if (!el) { addStep({ ...o, status: 'verified' }); return; }
+  el.className = 'step verified';
+  const chip = o.type || 'synthesis';
+  el.innerHTML = `
+    <div class="step-header">
+      <span class="step-chip ${chip}">${chip}</span>
+      <span class="step-icon ok">&#10003;</span>
+    </div>
+    <div class="step-label">${o.label || ''}</div>
+    ${o.twin ? `<div class="step-twin">${o.twin}</div>` : ''}
+    <div class="step-body">${o.preview || ''}</div>
+    ${o.proof && o.proof.tx_hash ? `
+      <div class="step-proof">
+        <span class="proof-chip">TEE Verified</span>
+        <a class="proof-hash" href="https://explorer.opengradient.ai/tx/${o.proof.tx_hash}" target="_blank">
+          ${o.proof.tx_hash.slice(0,18)}... &#8599;
+        </a>
+      </div>` : ''}`;
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function showAnswer(question, data) {
+  if (popupShown) return;
+  popupShown = true;
+
+  const mode = data.og_mode || ogMode;
+  const live = mode === 'OG_LIVE' || (data.total_proofs || 0) > 0;
+  const paid = (data.x402_payments || 0) > 0;
+
+  if (data.og_mode) setOGStatus(data.og_mode);
+
+  const tag = document.getElementById('sheet-tag');
+  tag.textContent = live
+    ? 'Verified Answer  \u2022  OG TEE Live  \u2022  On-Chain Proof'
+    : 'Verified Answer  \u2022  OpenGradient Knowledge Base';
+  tag.className = 'sheet-tag ' + (live ? 'live' : 'kb');
+
+  document.getElementById('sheet-question').textContent = question;
+  document.getElementById('answer-copy').textContent    = data.final_answer || 'No answer returned.';
+  document.getElementById('stat-nodes').textContent     = data.nodes_minted  || 0;
+  document.getElementById('stat-proofs').textContent    = data.total_proofs  || 0;
+  document.getElementById('stat-conf').textContent      = Math.round((data.confidence || 0) * 100) + '%';
+  document.getElementById('stat-twins').textContent     =
+    data.twins_consulted ? Object.keys(data.twins_consulted).length : 0;
+
+  const strip = document.getElementById('payment-strip');
+  const txt   = document.getElementById('pay-text');
+
+  if (paid) {
+    strip.className = 'payment-strip paid';
+    txt.innerHTML = `<strong style="color:var(--emerald)">x402 payments settled</strong> \u2014 ${data.x402_payments} \u00d7 $OPG auto-charged to Digital Twin owners via OpenGradient payment channels.`;
+  } else if (live) {
+    strip.className = 'payment-strip active';
+    txt.innerHTML = `<strong style="color:var(--indigo)">OG TEE Live</strong> \u2014 Inference ran on-chain with cryptographic attestation. x402 twin payments accumulate as your graph grows.`;
+  } else {
+    strip.className = 'payment-strip standby';
+    txt.innerHTML = `<strong style="color:var(--gold)">Knowledge Mode</strong> \u2014 Add your <code style="font-family:var(--code);color:var(--indigo);background:rgba(99,102,241,0.1);padding:1px 5px;border-radius:4px">OG_PRIVATE_KEY</code> to <code style="font-family:var(--code);color:var(--indigo);background:rgba(99,102,241,0.1);padding:1px 5px;border-radius:4px">backend/.env</code> to enable live TEE inference and x402 auto-payments.`;
+  }
+
+  document.getElementById('answer-overlay').classList.add('open');
+}
+
+function closeAnswer() {
+  document.getElementById('answer-overlay').classList.remove('open');
+}
+
+function startPolling(sid, q) {
+  let attempts = 0;
+  pollTimer = setInterval(async () => {
+    if (popupShown || attempts++ > 80) { clearInterval(pollTimer); return; }
+    try {
+      const r = await fetch(`${API}/api/session/${sid}`);
+      const d = await r.json();
+      if (d.status === 'complete' && d.final_answer) {
+        clearInterval(pollTimer);
+        showAnswer(q, {
+          final_answer: d.final_answer, confidence: d.confidence || 0,
+          nodes_minted: 4, total_proofs: 0, nodes_reused: 0,
+          twins_consulted: {}, x402_payments: 0, og_mode: ogMode
+        });
+        reenableRun();
+        loadGraph(sid);
+        loadHistory();
+      }
+    } catch {}
+  }, 3000);
+}
+
+function openWebSocket(sid, q) {
+  if (ws) { try { ws.close(); } catch {} ws = null; }
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const host  = API.replace(/^https?:\/\//, '') || 'localhost:8000';
+  ws = new WebSocket(`${proto}://${host}/ws/${sid}`);
+  ws.onopen    = () => setProgress(12, 'Connected to OpenGradient reasoning pipeline...');
+  ws.onmessage = (e) => { try { processEvent(JSON.parse(e.data), q); } catch {} };
+  ws.onerror   = () => notify('WebSocket error. Check that the backend is running.', 'error');
+  ws.onclose   = () => { if (document.getElementById('btn-run').disabled) reenableRun(); };
+}
+
+function processEvent(msg, q) {
+  const { type, data } = msg;
+  if (!type || ['connected','pong','heartbeat'].includes(type)) return;
+
+  if (type === 'session_start') {
+    addStep({ type:'question', label:'Pipeline Started',
+      preview: data.message || 'Initializing 3-node reasoning pipeline...', status:'verified' });
+    setProgress(10, data.message || 'Starting...');
+    return;
+  }
+
+  if (type === 'node_pending') {
+    setProgress(Math.min(15 + (data.position || 1) * 12, 68),
+      (data.twin_name || 'Processing') + ' on ' + (data.label || '...'));
+    addStep({ nodeId:data.node_id, type:'pending', label:data.label,
+      preview:data.message || 'Running TEE inference...', status:'pending', twin:data.twin_name });
+    return;
+  }
+
+  if (type === 'node_verified') {
+    setProgress(Math.min(70 + (data.position || 1) * 5, 90), 'Verified: ' + data.label);
+    upgradeStep(data.node_id, {
+      label:data.label, preview:(data.content || '').slice(0,220),
+      type:data.node_type || 'analysis', twin:data.twin_name, proof:data.tee_proof
+    });
+    addLiveNode({
+      id:data.node_id, label:data.label, type:data.node_type || 'analysis',
+      status:'verified', has_proof:!!(data.tee_proof && data.tee_proof.tx_hash), group:'node'
+    }, curSession);
+    return;
+  }
+
+  if (type === 'graph_reuse') {
+    addStep({ type:'reused', label:data.label,
+      preview:'Existing verified node cited. Knowledge compounding across sessions.', status:'reused' });
+    return;
+  }
+
+  if (type === 'session_complete') {
+    setProgress(100, 'All nodes verified. Answer ready.');
+    addStep({ type:'synthesis', label:'Final Synthesis',
+      preview:(data.final_answer || '').slice(0,200), status:'verified' });
+    clearInterval(pollTimer);
+    reenableRun();
+    setTimeout(() => {
+      showAnswer(q, data);
+      loadGraph(curSession);
+      loadHistory();
+    }, 80);
+    return;
+  }
+
+  if (type === 'error') {
+    notify('Pipeline error: ' + (data.error || 'Unknown error'), 'error');
+    setProgress(0, 'Error. Please try again.');
+    clearInterval(pollTimer);
+    reenableRun();
+    return;
+  }
+}
+
+async function submitQuery() {
+  const q = document.getElementById('qi').value.trim();
+  const w = document.getElementById('wi').value.trim();
+  if (!q) { notify('Please enter a question first.', 'error'); return; }
+
+  clearFeed();
+  closeAnswer();
+  clearGraphVisual();
+  popupShown = false;
+  clearInterval(pollTimer);
+  setProgress(0, 'Starting reasoning pipeline...');
+
+  const btn = document.getElementById('btn-run');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="shimmer"></div><span>Reasoning on OpenGradient...</span>';
+
+  try {
+    const r = await fetch(`${API}/api/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q, wallet_address: w || null, use_tee: true, max_nodes: 3 })
+    });
+    if (!r.ok) throw new Error('Server error ' + r.status);
+    const d  = await r.json();
+    curSession = d.session_id;
+    openWebSocket(curSession, q);
+    startPolling(curSession, q);
+  } catch (e) {
+    notify('Error: ' + e.message, 'error');
+    reenableRun();
+    setProgress(0, 'Ready');
+  }
+}
+
+// GRAPH
+
+function graphTick() {
+  if (linkLayer) {
+    linkLayer.selectAll('line')
+      .attr('x1', d => d.source.x || 0).attr('y1', d => d.source.y || 0)
+      .attr('x2', d => d.target.x || 0).attr('y2', d => d.target.y || 0);
+  }
+  if (nodeLayer) {
+    nodeLayer.selectAll('g.ng')
+      .attr('transform', d => `translate(${d.x || 0},${d.y || 0})`);
+  }
+}
+
+function buildGraph() {
+  const container = document.getElementById('gsvg').parentElement;
+  gW = container.clientWidth  || 600;
+  gH = container.clientHeight || 400;
+  if (sim) { sim.stop(); sim = null; }
+
+  svgSel = d3.select('#gsvg').attr('width', gW).attr('height', gH);
+  svgSel.selectAll('*').remove();
+
+  const defs  = svgSel.append('defs');
+  const filt  = defs.append('filter').attr('id','nglow')
+    .attr('x','-60%').attr('y','-60%').attr('width','220%').attr('height','220%');
+  filt.append('feGaussianBlur').attr('stdDeviation','3.5').attr('result','blur');
+  const fm = filt.append('feMerge');
+  fm.append('feMergeNode').attr('in','blur');
+  fm.append('feMergeNode').attr('in','SourceGraphic');
+
+  rootG = svgSel.append('g');
+  zoomHandler = d3.zoom().scaleExtent([0.1, 8])
+    .on('zoom', e => rootG.attr('transform', e.transform));
+  svgSel.call(zoomHandler);
+
+  linkLayer = rootG.append('g').attr('class', 'links');
+  nodeLayer = rootG.append('g').attr('class', 'nodes');
+
+  sim = d3.forceSimulation()
+    .force('link',    d3.forceLink().id(d => d.id).distance(155).strength(0.5))
+    .force('charge',  d3.forceManyBody().strength(-520))
+    .force('center',  d3.forceCenter(gW / 2, gH / 2))
+    .force('collide', d3.forceCollide().radius(68))
+    .alphaDecay(0.01)
+    .velocityDecay(0.3)
+    .alphaMin(0.001)
+    .on('tick', graphTick);
+
+  graphInit = true;
+  renderGraph();
+}
+
+function spreadNode(n) {
+  if (n.x === undefined) {
+    const a = Math.random() * 2 * Math.PI;
+    const r = 80 + Math.random() * 170;
+    n.x = gW / 2 + r * Math.cos(a);
+    n.y = gH / 2 + r * Math.sin(a);
+    n.vx = 0; n.vy = 0;
+  }
+}
+
+function renderGraph() {
+  if (!graphInit) return;
+  const nodes = fullGraph.nodes.length ? fullGraph.nodes : liveNodes;
+  const links = fullGraph.links.length ? fullGraph.links : liveLinks;
+
+  if (!nodes.length) {
+    document.getElementById('graph-zero').style.display = 'flex'; return;
+  }
+  document.getElementById('graph-zero').style.display = 'none';
+
+  const lSel = linkLayer.selectAll('line')
+    .data(links, d => (d.source.id || d.source) + '>' + (d.target.id || d.target));
+  lSel.enter().append('line')
+    .style('stroke', 'rgba(99,102,241,0.35)')
+    .style('stroke-width', 1.8);
+  lSel.exit().remove();
+
+  const nSel  = nodeLayer.selectAll('g.ng').data(nodes, d => d.id);
+  const enter = nSel.enter().append('g').attr('class','ng')
+    .style('cursor','pointer')
+    .on('click', (ev, d) => openNodeDetail(d))
+    .call(d3.drag()
+      .on('start', (ev, d) => {
+        if (!ev.active) sim.alphaTarget(0.25).restart();
+        d.fx = d.x; d.fy = d.y;
+      })
+      .on('drag', (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
+      .on('end',  (ev, d) => {
+        if (!ev.active) sim.alphaTarget(0);
+        d.fx = null; d.fy = null;
+      })
+    );
+
+  enter.append('circle').attr('class','aura')
+    .attr('r', d => d.group === 'session' ? 29 : 19)
+    .attr('fill','none')
+    .style('stroke', d => COLORS[d.type] || COLORS.default)
+    .style('stroke-opacity', 0.1)
+    .style('stroke-width', 10);
+
+  enter.append('circle').attr('class','body')
+    .attr('r', d => d.group === 'session' ? 16 : 11)
+    .attr('fill', d => (COLORS[d.type] || COLORS.default) + '1a')
+    .style('stroke', d => COLORS[d.type] || COLORS.default)
+    .style('stroke-width', 1.8)
+    .style('filter', d => (d.has_proof || d.group === 'session') ? 'url(#nglow)' : 'none');
+
+  enter.filter(d => d.has_proof).append('circle')
+    .attr('r', 3.5).attr('fill', '#10b981')
+    .attr('cx', d => d.group === 'session' ? 11 : 8)
+    .attr('cy', d => d.group === 'session' ? -11 : -8);
+
+  enter.append('text')
+    .attr('text-anchor','middle').attr('dy','0.35em')
+    .style('font-size', d => d.group === 'session' ? '11px' : '9px')
+    .style('font-family','var(--code)')
+    .style('font-weight','500')
+    .style('fill', d => COLORS[d.type] || COLORS.default)
+    .style('pointer-events','none')
+    .text(d => ICONS[d.type] || ICONS.default);
+
+  enter.append('text').attr('class','nlbl')
+    .attr('dy', d => d.group === 'session' ? 32 : 26)
+    .attr('text-anchor','middle')
+    .style('font-size', d => d.group === 'session' ? '10.5px' : '9.5px')
+    .style('font-family','var(--body)')
+    .style('font-weight', d => d.group === 'session' ? '500' : '300')
+    .style('fill', d => d.group === 'session' ? '#6366f1' : '#94a3b8')
+    .style('pointer-events','none')
+    .text(d => { const l = d.label || ''; return l.length > 15 ? l.slice(0,15) + '...' : l; });
+
+  nSel.exit().remove();
+  sim.nodes(nodes);
+  sim.force('link').links(links);
+  sim.alpha(Math.max(sim.alpha(), 0.3)).restart();
+}
+
+function addLiveNode(node, sid) {
+  if (liveNodes.find(n => n.id === node.id)) return;
+  if (sid && !liveNodes.find(n => n.id === sid)) {
+    const hub = { id:sid, label:'Query Hub', type:'question', group:'session', status:'verified', has_proof:false };
+    spreadNode(hub);
+    liveNodes.push(hub);
+  }
+  spreadNode(node);
+  liveNodes.push(node);
+  if (sid) liveLinks.push({ source:sid, target:node.id, type:'reasoning' });
+  renderGraph();
+}
+
+function clearGraphVisual() {
+  liveNodes  = []; liveLinks  = [];
+  fullGraph  = { nodes:[], links:[] };
+  if (linkLayer) linkLayer.selectAll('line').remove();
+  if (nodeLayer) nodeLayer.selectAll('g.ng').remove();
+  if (sim)       { sim.nodes([]); sim.force('link').links([]); }
+  document.getElementById('graph-zero').style.display = 'flex';
+}
+
+async function loadGraph(sid) {
+  try {
+    const url = sid ? `${API}/api/graph?session_id=${sid}` : `${API}/api/graph`;
+    const r   = await fetch(url);
+    const d   = await r.json();
+    if (d.stats) refreshCounters(d.stats);
+
+    const pos = {};
+    liveNodes.forEach(n  => { pos[n.id]  = { x:n.x,  y:n.y,  vx:n.vx  || 0, vy:n.vy  || 0 }; });
+    fullGraph.nodes.forEach(n => { pos[n.id] = { x:n.x, y:n.y, vx:n.vx || 0, vy:n.vy || 0 }; });
+
+    fullGraph = d;
+    fullGraph.nodes.forEach(n => {
+      if (pos[n.id]) Object.assign(n, pos[n.id]);
+      else spreadNode(n);
+    });
+
+    if (!graphInit) buildGraph();
+    else renderGraph();
+  } catch {}
+}
+
+function clearAndRefresh() { clearGraphVisual(); loadGraph(null); }
+
+function resetZoom() {
+  if (svgSel && zoomHandler)
+    svgSel.transition().duration(500).call(zoomHandler.transform, d3.zoomIdentity);
+}
+
+function refreshCounters(s) {
+  if (!s) return;
+  document.getElementById('gc-nodes').textContent    = s.total_nodes     || 0;
+  document.getElementById('gc-verified').textContent = s.verified_nodes  || 0;
+  document.getElementById('gc-citations').textContent= s.total_citations || 0;
+}
+
+async function openNodeDetail(d) {
+  switchTab('node');
+  document.getElementById('node-zero').style.display    = 'none';
+  const det = document.getElementById('node-detail');
+  det.style.display = 'block';
+  try {
+    const r    = await fetch(`${API}/api/node/${d.id}`);
+    const node = await r.json();
+    const proof = (typeof node.tee_proof === 'string' ? JSON.parse(node.tee_proof) : node.tee_proof) || {};
+    det.innerHTML = `<div class="nd-wrap">
+      <div class="nd-name">${node.label || 'Node'}</div>
+      <span class="nd-chip ${node.node_type || 'synthesis'}">${node.node_type || 'node'}</span>
+      <div class="nd-label">Content</div>
+      <div class="nd-value">${node.content || 'No content available.'}</div>
+      <div class="nd-label">Model Used</div>
+      <div class="nd-value" style="font-family:var(--code);font-size:11px">${node.model_used || 'Unknown'}</div>
+      ${proof.tx_hash ? `
+        <div class="proof-plate">
+          <div class="proof-line"><span class="pkey">Inference Mode</span><span class="pval">${proof.inference_mode || 'TEE'}</span></div>
+          <div class="proof-line"><span class="pkey">Transaction</span><span class="pval">${proof.tx_hash}</span></div>
+          ${proof.payment_hash ? `<div class="proof-line"><span class="pkey">Payment Tx</span><span class="pval">${proof.payment_hash}</span></div>` : ''}
+          <div class="proof-line"><span class="pkey">Verified</span><span class="pval">${proof.verified ? 'Yes' : 'Pending'}</span></div>
+          <a class="og-explorer-link" href="https://explorer.opengradient.ai/tx/${proof.tx_hash}" target="_blank">View on OG Explorer &#8599;</a>
+        </div>` : `
+        <div style="margin-top:12px;padding:12px;border:1px solid var(--rim);border-radius:10px;font-size:12px;font-weight:300;color:var(--ink3);text-align:center;line-height:1.7">
+          Knowledge Mode. No on-chain proof yet.<br>
+          <span style="opacity:0.5">Add OG_PRIVATE_KEY to backend/.env for live TEE proofs.</span>
+        </div>`}
+      <div class="nd-label">Confidence</div>
+      <div class="nd-value" style="font-family:var(--display);font-size:18px;font-weight:800;color:var(--sky)">${Math.round((node.confidence || 0) * 100)}%</div>
+      <div class="nd-label">Citations</div>
+      <div class="nd-value" style="font-family:var(--code)">${node.citations || 0}</div>
+    </div>`;
+  } catch {
+    det.innerHTML = '<div style="padding:20px;font-size:12px;font-weight:300;color:var(--ink3)">Could not load node data.</div>';
+  }
+}
+
+async function loadHistory() {
+  try {
+    const r = await fetch(`${API}/api/sessions`);
+    const d = await r.json();
+    if (!d.sessions?.length) return;
+    const list = document.getElementById('hist-list');
+    list.innerHTML = '';
+    d.sessions.slice(0, 20).forEach(s => {
+      const el = document.createElement('div');
+      el.className = 'hist-card';
+      el.innerHTML = `
+        <div class="hist-question">${s.question}</div>
+        <div class="hist-meta">
+          <span>${s.status}</span>
+          <span>${new Date(s.created_at).toLocaleTimeString()}</span>
+        </div>`;
+      el.onclick = () => {
+        if (s.final_answer) {
+          popupShown = false;
+          showAnswer(s.question, {
+            final_answer:s.final_answer, confidence:s.confidence || 0,
+            nodes_minted:4, total_proofs:0, nodes_reused:0,
+            twins_consulted:{}, x402_payments:0, og_mode:ogMode
+          });
+        }
+      };
+      list.appendChild(el);
+    });
+  } catch {}
+}
+
+window.addEventListener('load', () => {
+  checkHealth();
+  buildGraph();
+  loadHistory();
+  setInterval(checkHealth,   15000);
+  setInterval(loadHistory,   12000);
+});
+
+window.addEventListener('resize', () => {
+  const saved = { nodes:[...liveNodes], links:[...liveLinks] };
+  sim = null; graphInit = false;
+  buildGraph();
+  liveNodes = saved.nodes;
+  liveLinks = saved.links;
+  renderGraph();
+});
+
+document.getElementById('qi').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submitQuery();
+});
+</script>
+</body>
+</html>

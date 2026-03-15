@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+websockets
+python-multipart
+opengradient
+httpx
+aiohttp
+pydantic
+sqlalchemy
+aiosqlite
+python-dotenv
+python-jose
+rich

@@ -1,0 +1,4 @@
+[ZoneTransfer]
+ZoneId=3
+ReferrerUrl=https://claude.ai/chat/5ce66013-7a8f-44e5-927f-d0882a0e03ff
+HostUrl=https://claude.ai/api/organizations/de2cc7f5-9097-4691-badd-c056e193977a/conversations/5ce66013-7a8f-44e5-927f-d0882a0e03ff/wiggle/download-file?path=%2Fmnt%2Fuser-data%2Foutputs%2Fproofgraph%2Fbackend%2Ftwin_router.py

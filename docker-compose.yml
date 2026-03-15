@@ -1,0 +1,31 @@
+# ================================================================
+# docker-compose.yml — ProofGraph Docker Deployment
+# Use this if you prefer Docker over local Python install
+# ================================================================
+
+version: '3.9'
+
+services:
+  proofgraph-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: proofgraph_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - proofgraph_data:/app/data
+    env_file:
+      - ./backend/.env
+    environment:
+      - DATABASE_PATH=/app/data/proofgraph.db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  proofgraph_data:
