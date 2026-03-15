@@ -1,13 +1,7 @@
 # og_client.py
-# OpenGradient SDK wrapper using the current API.
+# OpenGradient SDK wrapper.
+# Uses og.LLM — the current API as of 2026.
 # Docs: docs.opengradient.ai/developers/sdk/llm.html
-#
-# Current API (as of 2026):
-#   llm = og.LLM(private_key="0x...")
-#   await llm.ensure_opg_approval(opg_amount=5.0)
-#   result = await llm.chat(model=og.TEE_LLM.GPT_4_1_2025_04_14, messages=[...])
-#   result.chat_output['content']  -> text
-#   result.payment_hash            -> payment tx hash
 
 import os
 import asyncio
@@ -23,7 +17,6 @@ _PLACEHOLDER_KEYS = {
     "your_private_key", "add_your_key_here",
 }
 
-# Default model — GPT-4.1 via OG TEE
 DEFAULT_MODEL = "openai/gpt-4.1-2025-04-14"
 
 
@@ -39,22 +32,19 @@ class OGClient:
 
     def _init_sdk(self):
         if self.private_key.lower() in _PLACEHOLDER_KEYS:
-            print("No OG_PRIVATE_KEY set — running in Knowledge Mode")
+            print("No OG_PRIVATE_KEY set — Knowledge Mode")
             return
 
         try:
             import opengradient as og
             self._og  = og
-
-            # New API: og.LLM — not og.Client
             self._llm = og.LLM(private_key=self.private_key)
 
-            # Ensure Permit2 approval so payments work automatically
             try:
                 approval = self._llm.ensure_opg_approval(opg_amount=10.0)
                 print(f"Permit2 approval OK — allowance: {getattr(approval, 'allowance_after', 'set')}")
             except Exception as e:
-                print(f"Permit2 approval note: {e} — will attempt on first call")
+                print(f"Permit2 note: {e}")
 
             self._initialized = True
             self.mode         = "OG_LIVE"
@@ -64,7 +54,7 @@ class OGClient:
             print(f"  Model:  {DEFAULT_MODEL}")
 
         except ImportError:
-            print("opengradient not installed — run: pip install opengradient")
+            print("opengradient package not installed — run: pip install opengradient")
         except Exception as e:
             print(f"OG SDK init error: {e}")
             print("Falling back to Knowledge Mode")
@@ -80,10 +70,6 @@ class OGClient:
         system_prompt: str,
         max_tokens: int = 400,
     ) -> Dict[str, Any]:
-        """
-        Run inference via OpenGradient TEE.
-        Falls back to local knowledge base if SDK not initialized.
-        """
         if self._initialized and self._llm:
             try:
                 return await asyncio.wait_for(
@@ -91,11 +77,12 @@ class OGClient:
                     timeout=60.0
                 )
             except asyncio.TimeoutError:
-                print("OG call timed out (60s) — using knowledge base for this call")
+                print("OG call timed out (60s)")
             except Exception as e:
-                print(f"OG inference error: {e} — using knowledge base for this call")
+                print(f"OG inference error: {e}")
 
-        return self._knowledge_inference(prompt, system_prompt)
+        # Fallback — SDK not available
+        return self._unavailable_fallback(prompt)
 
     async def _call_llm(
         self,
@@ -103,22 +90,13 @@ class OGClient:
         system_prompt: str,
         max_tokens: int,
     ) -> Dict[str, Any]:
-        """
-        Call og.LLM.chat() with the current API.
-        result.chat_output['content'] -> text
-        result.payment_hash           -> payment hash string
-        """
-        og = self._og
-
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user",   "content": prompt},
         ]
 
-        # Determine which model enum to use
-        model = self._get_model()
-
-        result = await self._llm.chat(
+        model   = self._get_model()
+        result  = await self._llm.chat(
             model=model,
             messages=messages,
             max_tokens=max_tokens,
@@ -127,7 +105,6 @@ class OGClient:
 
         content      = self._extract_content(result)
         payment_hash = getattr(result, "payment_hash", None)
-        # payment_hash acts as the tx hash in the new API
         tx_hash      = str(payment_hash) if payment_hash else None
 
         print(f"OG TEE inference complete — payment: {tx_hash}")
@@ -144,46 +121,37 @@ class OGClient:
         }
 
     def _get_model(self):
-        """Return the correct og.TEE_LLM enum for the default model."""
         try:
-            og = self._og
-            # Try GPT-4.1 first (current default)
+            og  = self._og
             if hasattr(og, "TEE_LLM"):
                 tee = og.TEE_LLM
-                # Try each model name in preference order
                 for attr in ["GPT_4_1_2025_04_14", "GPT_5", "GPT_4_1", "CLAUDE_SONNET_4_6"]:
                     if hasattr(tee, attr):
                         return getattr(tee, attr)
-            # Fallback: return string model name (older SDK versions)
             return DEFAULT_MODEL
         except Exception:
             return DEFAULT_MODEL
 
     def _extract_content(self, result) -> str:
-        """Extract text from og.LLM response."""
         if result is None:
             return ""
 
-        # New API: result.chat_output is a dict with 'content' key
         chat_output = getattr(result, "chat_output", None)
         if chat_output:
             if isinstance(chat_output, dict):
                 return chat_output.get("content", "") or ""
             return str(chat_output)
 
-        # Fallback: completion output
-        completion_output = getattr(result, "completion_output", None)
-        if completion_output:
-            return str(completion_output)
+        completion = getattr(result, "completion_output", None)
+        if completion:
+            return str(completion)
 
-        # Fallback: OpenAI-style choices
         if hasattr(result, "choices") and result.choices:
             try:
                 return result.choices[0].message.content or ""
             except Exception:
                 pass
 
-        # Last resort
         for attr in ("content", "output", "text"):
             val = getattr(result, attr, None)
             if val:
@@ -191,46 +159,24 @@ class OGClient:
 
         return str(result)
 
-    def _knowledge_inference(self, prompt: str, system_prompt: str) -> Dict[str, Any]:
+    def _unavailable_fallback(self, prompt: str) -> Dict[str, Any]:
         """
-        Local fallback used when OG SDK is unavailable.
-        1. Extract the actual question from the prompt
-        2. Check KB for OG-specific topics
-        3. For general questions not in KB, return a clear message
-           rather than an incorrect generic answer
+        Only used when OG SDK is completely unavailable (no private key).
+        Returns a transparent message so the user knows what is happening.
         """
-        from og_knowledge import get_focused_answer
-
-        # Extract just the Question: line — never run the full multi-line prompt
-        # through topic detection (it picks up noise keywords from role instructions)
-        question = prompt
-        for line in prompt.split("\n"):
-            stripped = line.strip()
-            if stripped.startswith("Question:"):
-                question = stripped.replace("Question:", "").strip()
-                break
-
-        answer = get_focused_answer(question)
-
-        if not answer:
-            # General question not in the OG knowledge base.
-            # When OG SDK is live, this code never runs — the LLM answers everything.
-            # In Knowledge Mode, non-OG questions cannot be answered accurately offline.
-            answer = (
-                "This requires live LLM inference to answer. "
-                "ProofGraph is running in Knowledge Mode — add OG_PRIVATE_KEY to enable "
-                "full TEE inference for any question."
-            )
-
         return {
-            "content":      answer,
+            "content": (
+                "ProofGraph is running without a connected OpenGradient wallet. "
+                "Add OG_PRIVATE_KEY to the backend environment to enable live "
+                "TEE inference and get real verified answers for any question."
+            ),
             "tx_hash":      None,
             "payment_hash": None,
-            "model":        "og-knowledge-base",
+            "model":        "unavailable",
             "mode":         "KNOWLEDGE",
             "verified":     False,
             "timestamp":    datetime.utcnow().isoformat(),
-            "source":       "knowledge_base",
+            "source":       "unavailable",
         }
 
 

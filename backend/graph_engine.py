@@ -1,7 +1,7 @@
 # graph_engine.py
-# ProofGraph core reasoning pipeline.
-# 3 parallel TEE nodes + 1 synthesis node.
-# No knowledge base injection — LLM answers everything directly from OG system context.
+# ProofGraph reasoning pipeline.
+# 3 parallel TEE nodes answering from distinct roles, then 1 synthesis node.
+# The LLM answers everything directly — no knowledge base injection.
 
 import uuid
 import asyncio
@@ -15,73 +15,69 @@ from models import (
 from og_client import get_og_client
 from memsync_client import get_memsync
 from twin_router import get_twin_router
-from og_knowledge import OG_SYSTEM_CONTEXT, _STOP
+from og_knowledge import OG_SYSTEM_CONTEXT
 import database as db
 
+STOP_WORDS = {
+    "what","is","are","the","a","an","how","why","who","does","do","can",
+    "about","tell","me","of","in","on","to","for","and","or","this","that",
+    "it","its","with","from","by","at","was","were","has","have","had",
+    "will","would","could","should","give","show","explain","describe",
+}
 
-def _build_tasks(question: str) -> list:
-    """
-    3 tasks with genuinely different angles on the question.
-    No shared context — each node reasons independently from its role.
-    """
-    q = question.strip().rstrip("?")
-
-    return [
-        {
-            "type":  "analysis",
-            "label": "Core Analysis",
-            "role":  "Technical analyst. Explain mechanisms, how it works, and the architecture.",
-            "prompt": (
-                f"Question: {q}\n\n"
-                "Explain the core mechanisms and how this works technically. "
-                "What is it, how does it function, what makes it unique? "
-                "Be specific and expert-level. Under 160 words."
-            ),
-        },
-        {
-            "type":  "evidence",
-            "label": "Evidence & Context",
-            "role":  "Research analyst. Provide facts, real examples, data, and real-world context.",
-            "prompt": (
-                f"Question: {q}\n\n"
-                "Provide the key facts, real-world evidence, and concrete examples. "
-                "What problems does this solve? What are the risks or limitations? "
-                "Be factual and grounded. Under 160 words."
-            ),
-        },
-        {
-            "type":  "conclusion",
-            "label": "Key Takeaways",
-            "role":  "Strategic advisor. Give practical implications and actionable insights.",
-            "prompt": (
-                f"Question: {q}\n\n"
-                "What are the practical implications and bottom line? "
-                "What should someone do with this information? "
-                "What is the impact? Be direct and actionable. Under 160 words."
-            ),
-        },
-    ]
-
-
-def _node_system(role: str, twin_persona: str) -> str:
-    return (
-        f"{OG_SYSTEM_CONTEXT}\n\n"
-        f"YOUR ROLE: {role}\n\n"
-        f"{twin_persona}\n\n"
-        "Answer the question directly from your role's perspective. "
-        "Under 160 words. No filler."
-    )
-
+NODE_SYSTEM = (
+    f"{OG_SYSTEM_CONTEXT}\n\n"
+    "YOUR ROLE FOR THIS REASONING NODE:\n{{role}}\n\n"
+    "{{persona}}\n\n"
+    "Answer the question from your specific role. "
+    "Be direct, accurate, and expert-level. Under 160 words."
+)
 
 SYNTHESIS_SYSTEM = (
     f"{OG_SYSTEM_CONTEXT}\n\n"
-    "Synthesize the 3 expert analyses into one clear final answer.\n\n"
+    "Synthesize 3 expert analyses into one clear final answer.\n\n"
     "Format:\n"
-    "2-sentence direct answer.\n"
-    "3 bullet points of key insights.\n"
-    "1 bottom-line sentence.\n\n"
-    "Stay on the topic of the question. Under 220 words."
+    "- 2 sentences direct answer\n"
+    "- 3 bullet points of key insights\n"
+    "- 1 bottom-line sentence\n\n"
+    "Stay precisely on the topic of the question. Under 220 words."
 )
+
+ROLES = [
+    {
+        "type":   "analysis",
+        "label":  "Core Analysis",
+        "role":   "Technical analyst — explain the core mechanisms, how it works, and why.",
+        "prompt": (
+            "Question: {q}\n\n"
+            "Explain the core mechanisms and how this works technically. "
+            "What is it, how does it function, what makes it unique or important? "
+            "Be specific. Under 160 words."
+        ),
+    },
+    {
+        "type":   "evidence",
+        "label":  "Evidence & Context",
+        "role":   "Research analyst — provide facts, real examples, data, and real-world context.",
+        "prompt": (
+            "Question: {q}\n\n"
+            "Provide key facts, real-world evidence, and concrete examples. "
+            "What problems does this solve? What are the risks or limitations? "
+            "Be factual. Under 160 words."
+        ),
+    },
+    {
+        "type":   "conclusion",
+        "label":  "Key Takeaways",
+        "role":   "Strategic advisor — give practical implications and actionable insights.",
+        "prompt": (
+            "Question: {q}\n\n"
+            "What are the practical implications and the bottom line? "
+            "What should someone do with this information? "
+            "What is the real-world impact? Be direct. Under 160 words."
+        ),
+    },
+]
 
 
 class GraphEngine:
@@ -130,9 +126,9 @@ class GraphEngine:
 
     async def _pipeline(self, question, session_id, wallet_address, send):
 
-        keywords = [w for w in question.lower().split() if w not in _STOP][:6]
+        keywords = [w for w in question.lower().split() if w not in STOP_WORDS][:6]
 
-        # Check graph for reusable nodes from previous sessions
+        # Check for reusable verified nodes from previous sessions
         existing = await db.search_nodes_by_topic(keywords, limit=2)
         for en in existing:
             await db.increment_citation(en["id"])
@@ -142,8 +138,11 @@ class GraphEngine:
                 "message": f"Reusing verified node: {en['label']}",
             })
 
-        # Build 3 independent tasks — no shared KB context
-        tasks = _build_tasks(question)
+        # Build tasks — question substituted directly, no KB injection
+        tasks = [
+            {**r, "prompt": r["prompt"].format(q=question)}
+            for r in ROLES
+        ]
 
         # Route each task to the most relevant Digital Twin
         twins = [
@@ -170,10 +169,11 @@ class GraphEngine:
                 "message":   f"{twin['name']}: {task['label']}",
             })
 
-        async def run_node(i: int, task: dict, twin: dict, node_id: str):
-            system_prompt = _node_system(
-                role=task["role"],
-                twin_persona=twin.get("persona", "")
+        async def run_node(i: int, task: dict, twin: dict, node_id: str) -> ReasoningNode:
+            system_prompt = NODE_SYSTEM.replace(
+                "{{role}}", task["role"]
+            ).replace(
+                "{{persona}}", twin.get("persona", "")
             )
 
             result = await self.og.infer_tee(
@@ -216,20 +216,23 @@ class GraphEngine:
 
             if wallet_address:
                 asyncio.create_task(self.memsync.store_node_memory(
-                    user_id=wallet_address, node_id=node_id,
-                    label=task["label"], content=result["content"],
+                    user_id=wallet_address,
+                    node_id=node_id,
+                    label=task["label"],
+                    content=result["content"],
                     node_type=task["type"],
-                    tx_hash=result.get("tx_hash"), topic_tags=keywords,
+                    tx_hash=result.get("tx_hash"),
+                    topic_tags=keywords,
                 ))
 
             return node
 
         minted: List[ReasoningNode] = await asyncio.gather(
-            *[run_node(i, task, twin, nid)
-              for i, (task, twin, nid) in enumerate(zip(tasks, twins, node_ids))]
+            *[run_node(i, t, tw, nid)
+              for i, (t, tw, nid) in enumerate(zip(tasks, twins, node_ids))]
         )
 
-        # Final synthesis
+        # Synthesis node
         await send(WSEventType.NODE_PENDING, {
             "node_id":  "synthesis",
             "label":    "Final Synthesis",
@@ -282,8 +285,10 @@ class GraphEngine:
 
         if wallet_address:
             asyncio.create_task(self.memsync.store_session_memory(
-                user_id=wallet_address, question=question,
-                final_answer=final_answer, session_id=session_id,
+                user_id=wallet_address,
+                question=question,
+                final_answer=final_answer,
+                session_id=session_id,
                 node_count=len(minted) + 1,
             ))
 
@@ -314,7 +319,7 @@ class GraphEngine:
         return TEEProof(
             payment_hash   = result.get("payment_hash"),
             tx_hash        = result.get("tx_hash"),
-            model_used     = result.get("model", "og-knowledge-base"),
+            model_used     = result.get("model", "og"),
             inference_mode = result.get("mode", "KNOWLEDGE"),
             timestamp      = result.get("timestamp", datetime.utcnow().isoformat()),
             verified       = result.get("verified", False),
