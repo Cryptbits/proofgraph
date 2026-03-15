@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
   <!-- SET YOUR RENDER BACKEND URL HERE — replace the content value -->
-  <meta name="proofgraph-api" content="https://proofgraph.onrender.com"/>
+  <meta name="proofgraph-api" content="REPLACE_API_URL"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>ProofGraph — Verifiable Intelligence on OpenGradient</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
@@ -185,6 +185,7 @@ nav {
   white-space: nowrap;
 }
 
+.og-label.ready { color: var(--indigo); opacity: 0.8; }
 .og-label.live { color: var(--emerald); }
 
 /* LAYOUT */
@@ -1215,9 +1216,7 @@ textarea#qi::placeholder {
       <span class="stack-badge">TEE · x402 · MemSync · Twin.fun</span>
     </div>
 
-    <div class="mode-callout kb" id="mode-callout">
-      <strong>Knowledge Mode</strong> — Add <code>OG_PRIVATE_KEY</code> to <code>backend/.env</code> and restart to enable live TEE inference and x402 auto-payments.
-    </div>
+    <div class="mode-callout" id="mode-callout" style="display:none"></div>
 
     <div class="query-wrap">
       <div class="query-label">Ask the verifiable intelligence graph</div>
@@ -1376,17 +1375,17 @@ function setOGStatus(mode, wallet) {
   const ind  = document.getElementById('og-indicator');
   const cal  = document.getElementById('mode-callout');
 
-  dot.className = 'og-dot' + (live ? ' live' : '');
+  dot.className = 'og-dot' + (live ? ' live' : ' ready');
   lbl.textContent = live
-    ? 'Connected to OG TEE' + (wallet ? '  ' + wallet.slice(0,8) + '...' : '')
-    : 'Knowledge Mode';
-  lbl.className = 'og-label' + (live ? ' live' : '');
-  ind.className = 'og-indicator' + (live ? ' live' : '');
+    ? 'Connected to OG TEE' + (wallet ? '  ·  ' + wallet.slice(0,8) + '…' : '')
+    : 'OpenGradient Network';
+  lbl.className = 'og-label' + (live ? ' live' : ' ready');
+  ind.className = 'og-indicator' + (live ? ' live' : ' ready');
 
-  cal.className = 'mode-callout visible ' + (live ? 'live' : 'kb');
-  cal.innerHTML = live
-    ? '<strong>OG LIVE</strong> — TEE inference active. x402 auto-payments enabled. Proofs settling on Nova Testnet.'
-    : '<strong>Knowledge Mode</strong> — Add <code>OG_PRIVATE_KEY</code> to <code>backend/.env</code> and restart for live TEE inference and x402 payments.';
+  // Banner: show only when live, hide otherwise — never show internal config to users
+  cal.style.display = live ? 'block' : 'none';
+  cal.className = 'mode-callout' + (live ? ' live' : '');
+  if (live) cal.innerHTML = '<strong>OG LIVE</strong> — TEE inference active · x402 auto-payments enabled · Proofs settling on Nova Testnet';
 }
 
 async function checkHealth() {
@@ -1396,8 +1395,10 @@ async function checkHealth() {
     setOGStatus(d.mode || 'KNOWLEDGE', d.wallet);
     if (d.stats) refreshCounters(d.stats);
   } catch {
-    document.getElementById('og-label').textContent = 'Backend offline';
+    document.getElementById('og-label').textContent = 'Connecting...';
     document.getElementById('og-dot').className    = 'og-dot';
+    // retry in 5s
+    setTimeout(checkHealth, 5000);
   }
 }
 
@@ -1541,7 +1542,7 @@ function showAnswer(question, data) {
     txt.innerHTML = `<strong style="color:var(--indigo)">OG TEE Live</strong> \u2014 Inference ran on-chain with cryptographic attestation. x402 twin payments accumulate as your graph grows.`;
   } else {
     strip.className = 'payment-strip standby';
-    txt.innerHTML = `<strong style="color:var(--gold)">Knowledge Mode</strong> \u2014 Add your <code style="font-family:var(--code);color:var(--indigo);background:rgba(99,102,241,0.1);padding:1px 5px;border-radius:4px">OG_PRIVATE_KEY</code> to <code style="font-family:var(--code);color:var(--indigo);background:rgba(99,102,241,0.1);padding:1px 5px;border-radius:4px">backend/.env</code> to enable live TEE inference and x402 auto-payments.`;
+    txt.innerHTML = `x402 payments activate automatically once TEE inference is live.`;
   }
 
   document.getElementById('answer-overlay').classList.add('open');
@@ -1902,8 +1903,7 @@ async function openNodeDetail(d) {
           <a class="og-explorer-link" href="https://explorer.opengradient.ai/tx/${proof.tx_hash}" target="_blank">View on OG Explorer &#8599;</a>
         </div>` : `
         <div style="margin-top:12px;padding:12px;border:1px solid var(--rim);border-radius:10px;font-size:12px;font-weight:300;color:var(--ink3);text-align:center;line-height:1.7">
-          Knowledge Mode. No on-chain proof yet.<br>
-          <span style="opacity:0.5">Add OG_PRIVATE_KEY to backend/.env for live TEE proofs.</span>
+          TEE proof will appear here once inference is verified on-chain.
         </div>`}
       <div class="nd-label">Confidence</div>
       <div class="nd-value" style="font-family:var(--display);font-size:18px;font-weight:800;color:var(--sky)">${Math.round((node.confidence || 0) * 100)}%</div>
