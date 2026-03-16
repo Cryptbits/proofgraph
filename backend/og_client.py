@@ -127,6 +127,17 @@ class OGClient:
         for s in ["openai/gpt-4.1-2025-04-14", "openai/gpt-5-mini", "openai/gpt-5"]:
             models_to_try.append(("string", s))
 
+        # Ensure Permit2 approval before every call — not just on startup.
+        # Without this, 402 is returned even with a funded wallet.
+        try:
+            loop = asyncio.get_event_loop()
+            approval = await loop.run_in_executor(
+                None, lambda: self._llm.ensure_opg_approval(opg_amount=10.0)
+            )
+            print(f"Permit2 OK — allowance: {getattr(approval, 'allowance_after', 'set')}")
+        except Exception as e:
+            print(f"Permit2 warning: {e}")
+
         last_error = None
         for kind, model in models_to_try:
             try:
