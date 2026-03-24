@@ -1,3 +1,9 @@
 backend/.env
 __pycache__/
 *.pyc
+venv/
+*.db
+*.Zone.Identifier
+*:Zone.Identifier
+docker-compose.yml
+Dockerfile
