@@ -1,228 +1,129 @@
-# ⬡ ProofGraph — Verifiable Intelligence Graph
+# ProofGraph
 
-> Every AI reasoning step becomes a permanent, cryptographically-proven node in a public knowledge graph. Built entirely on OpenGradient's decentralized AI infrastructure.
+A verifiable intelligence graph built on OpenGradient. Every question you ask becomes a cryptographically proven reasoning chain recorded permanently on the OpenGradient blockchain.
 
----
-
-## What This Is
-
-ProofGraph turns ephemeral AI answers into **persistent, verifiable reasoning infrastructure**.
-
-When you ask a question:
-1. OpenGradient TEE LLM decomposes it into reasoning tasks
-2. Each task runs as a **TEE-secured inference** — cryptographically attested
-3. Each step becomes an immutable **node with on-chain proof**
-4. MemSync stores your reasoning history persistently
-5. x402 micropayments fire per inference automatically
-6. The graph grows — future queries **reuse existing verified nodes**
+Live: [proofgraph.vercel.app](https://proofgraph.vercel.app)
+Code: [github.com/Cryptbits/proofgraph](https://github.com/Cryptbits/proofgraph)
 
 ---
 
-## OpenGradient Tech Stack
+## What it does
 
-| Component | Role in ProofGraph |
-|---|---|
-| **TEE LLM Inference** | Every reasoning node runs inside a verified enclave |
-| **x402 micropayments** | Automatic per-inference payment via $OPG on Base Sepolia |
-| **MemSync** | Persistent cross-session memory — your intellectual identity |
-| **Model Hub** | Reasoning models versioned and pinned |
-| **On-chain ML Workflows** | Dispute arbitration + confidence scoring |
-| **Digital Twins** | Expert oracle routing (extension) |
+Most AI tools give you an answer and ask you to trust it. ProofGraph proves the answer instead.
 
----
+When you submit a question, three parallel reasoning nodes fire simultaneously inside OpenGradient's TEE. Each node approaches the problem from a distinct angle. Core Analysis breaks down the technical mechanisms. Evidence and Context brings the real-world facts and comparisons. Key Takeaways gives the practical implications. All three run at the same time, each inside a hardware-sealed AWS Nitro Enclave, each paying for itself autonomously via x402 in $OPG on Base Sepolia, each producing its own transaction hash on the OpenGradient Nova Testnet.
 
-## Prerequisites
+Once all three complete, a fourth node — the Final Synthesis — takes all three outputs and combines them into one clear, structured, verified answer. That is four TEE inference calls, four transaction hashes, and four nodes on the graph per query.
 
-- Ubuntu 20.04+ (or WSL2 on Windows)
-- Python 3.10, 3.11, or 3.12
-- A MetaMask wallet with $OPG testnet tokens (Base Sepolia)
-- MemSync API key (https://api.memchat.io)
-- OpenGradient Model Hub account (https://hub.opengradient.ai)
+Every node appears live on a D3.js force graph as it completes. Every node is clickable. Every node links to [explorer.opengradient.ai](https://explorer.opengradient.ai) so the proof can be independently verified by anyone.
+
+The graph grows over time. New questions find and cite verified nodes from previous sessions, building a permanent tamper-proof record where knowledge compounds across queries instead of resetting with every session.
 
 ---
 
-## Step-by-Step Setup
+## The OpenGradient stack
 
-### Step 1 — Clone / Enter project directory
+**TEE Inference**
+All four inference calls run via `og.LLM` inside AWS Nitro Enclaves. The hardware proves each computation ran correctly and the output hash settles on-chain. No trust in any company required.
+
+**x402 Payments**
+Each of the four inference calls is paid per-request in $OPG via Permit2 on Base Sepolia, embedded directly inside the TEE. No subscriptions, no middleware, no human approval needed between the request and the compute.
+
+**Digital Twin Routing**
+Each of the three reasoning nodes routes to the most relevant specialist persona from Twin.fun based on the question topic. Technical questions go to an AI Research Expert. DeFi and protocol questions go to a DeFi Analyst. Investment and economics questions go to Naval Ravikant. Each twin's perspective shapes the node output before the synthesis step.
+
+**MemSync**
+Completed sessions are stored in OpenGradient's portable memory layer, giving the graph persistent cross-session context that carries forward with every new query.
+
+**Nova Testnet**
+Every proof hash from every node settles on the OpenGradient Nova Testnet. Every node detail panel in the UI links directly to the block explorer for public verification.
+
+---
+
+## Running locally
+
+You need Python 3.11+, $OPG testnet tokens from [faucet.opengradient.ai](https://faucet.opengradient.ai), and Base Sepolia ETH for Permit2 gas from [alchemy.com/faucets/base-sepolia](https://www.alchemy.com/faucets/base-sepolia).
+
+Clone the repo and run setup:
 
 ```bash
+git clone https://github.com/Cryptbits/proofgraph
 cd proofgraph
+bash setup.sh
 ```
 
-### Step 2 — Run setup script
+Add your wallet private key to `backend/.env`:
 
-```bash
-chmod +x setup.sh
-./setup.sh
+```
+OG_PRIVATE_KEY=0x_your_private_key_here
 ```
 
-This installs all system and Python dependencies.
-
-### Step 3 — Activate the virtual environment
+Start the backend in one terminal:
 
 ```bash
 source venv/bin/activate
+cd backend && python main.py
 ```
 
-### Step 4 — Configure OpenGradient SDK
-
-Run the OG setup wizard:
+Start the frontend in a second terminal:
 
 ```bash
-opengradient config init
-```
-
-This guides you to:
-- Connect your wallet
-- Fund with $OPG from the testnet faucet
-- Verify your configuration
-
-Test it works:
-
-```bash
-opengradient config show
-```
-
-### Step 5 — Configure your .env
-
-```bash
-nano backend/.env
-```
-
-Fill in:
-
-```
-OG_PRIVATE_KEY=0xyour_private_key
-OG_EMAIL=your@email.com
-OG_PASSWORD=your_password
-MEMSYNC_API_KEY=your_memsync_key
-```
-
-Save with: `Ctrl+O` → Enter → `Ctrl+X`
-
-### Step 6 — Start the backend
-
-```bash
-cd backend
-python main.py
-```
-
-You should see:
-```
-✅ OpenGradient client initialized
-✅ ProofGraph backend ready
-🚀 ProofGraph Backend starting on http://0.0.0.0:8000
-```
-
-### Step 7 — Open the frontend
-
-Open a new terminal (or browser):
-
-```bash
-# Option A: Open directly in browser
-xdg-open frontend/index.html
-
-# Option B: Serve with Python (recommended for WebSocket)
 cd frontend && python3 -m http.server 3000
-# Then open http://localhost:3000
 ```
 
-### Step 8 — Get testnet tokens (if needed)
-
-Visit: https://faucet.opengradient.ai
-
-Enter your wallet address to receive $OPG on Base Sepolia.
+Open [http://localhost:3000](http://localhost:3000).
 
 ---
 
-## Using Docker (Alternative)
+## Deploying
 
-If you prefer Docker:
+**Backend on Render**
+Connect the repo to [render.com](https://render.com), set `OG_PRIVATE_KEY` in the environment variables, and Render handles the rest via the Procfile.
 
-```bash
-# Copy and configure env
-cp backend/.env.example backend/.env
-nano backend/.env  # fill in your keys
-
-# Build and run
-docker-compose up --build
-
-# Frontend: open frontend/index.html in browser
-```
+**Frontend on Vercel**
+Connect the repo to [vercel.com](https://vercel.com), set `BACKEND_URL` in `frontend/index.html` to your Render service URL, and push. Both platforms redeploy automatically on every push to main.
 
 ---
 
-## How to Use ProofGraph
-
-1. **Open the frontend** at http://localhost:3000
-2. **Type a question** in the query box (e.g. "What risks does restaking introduce to Ethereum?")
-3. **Optional**: Enter your wallet address for MemSync profile tracking
-4. **Click "Run Verifiable Reasoning"**
-5. **Watch live** as reasoning nodes are minted in the TEE
-6. **Explore the graph** — click nodes to see TEE proofs, payment hashes
-7. **Challenge nodes** — contest reasoning with your own counter-argument
-8. **View your profile** — see accumulated memories and citation economy
-
----
-
-## Project Structure
+## Project structure
 
 ```
 proofgraph/
-├── backend/
-│   ├── main.py              # FastAPI server + WebSocket
-│   ├── graph_engine.py      # Core reasoning pipeline
-│   ├── og_client.py         # OpenGradient SDK wrapper
-│   ├── memsync_client.py    # MemSync REST API client
-│   ├── database.py          # SQLite persistence
-│   ├── models.py            # Pydantic data models
-│   └── .env                 # Your credentials (git-ignored)
-├── frontend/
-│   └── index.html           # Complete single-file app
-├── requirements.txt
-├── setup.sh
-├── Dockerfile
-├── docker-compose.yml
-└── README.md
+  backend/
+    main.py             FastAPI server, WebSocket streaming, event buffering
+    graph_engine.py     3-node parallel pipeline and synthesis
+    og_client.py        OpenGradient SDK wrapper using og.LLM and Permit2
+    og_knowledge.py     OG knowledge base for offline fallback
+    twin_router.py      Digital Twin routing engine
+    memsync_client.py   MemSync memory storage
+    database.py         SQLite persistence
+    models.py           Pydantic data models
+  frontend/
+    index.html          Single-file UI with D3.js graph and WebSocket streaming
 ```
 
 ---
 
-## API Endpoints
+## Stack
 
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/api/query` | Submit a question |
-| GET | `/api/graph` | Full graph (D3-ready) |
-| GET | `/api/session/{id}` | Get session + nodes |
-| GET | `/api/node/{id}` | Get node with proof |
-| POST | `/api/challenge` | Challenge a node |
-| GET | `/api/profile/{wallet}` | MemSync user profile |
-| GET | `/api/stats` | Network statistics |
-| WS | `/ws/{session_id}` | Live reasoning stream |
-
-API docs: http://localhost:8000/docs
+| Layer | Technology |
+|---|---|
+| Verifiable inference | OpenGradient TEE via og.LLM |
+| Payments | x402 with $OPG on Base Sepolia |
+| Memory | OpenGradient MemSync |
+| Digital Twins | Twin.fun persona routing |
+| Proof settlement | OpenGradient Nova Testnet |
+| Frontend | D3.js, vanilla JS, WebSockets |
+| Backend | FastAPI, Python, SQLite |
 
 ---
 
-## Troubleshooting
+## Security
 
-**"OpenGradient client init failed"**
-→ Check `opengradient config show`
-→ Make sure wallet has $OPG tokens on Base Sepolia
-
-**"MemSync: No API key found"**
-→ App still works — just uses local memory only
-→ Get key from https://api.memchat.io
-
-**WebSocket not connecting**
-→ Make sure backend is running: `python main.py`
-→ Check CORS settings if using different port
-
-**TEE inference failing**
-→ The SDK falls back to VANILLA mode automatically
-→ Demo mode works without any credentials for UI testing
+Never commit your private key. The `backend/.env` file is in `.gitignore`. For production deployments, set `OG_PRIVATE_KEY` exclusively through your hosting platform's environment variable settings and never in code or config files.
 
 ---
 
-Built on **OpenGradient** — Trustless, Verifiable, Open AI Infrastructure
+## Links
+
+[opengradient.ai](https://opengradient.ai) · [explorer.opengradient.ai](https://explorer.opengradient.ai) · [faucet.opengradient.ai](https://faucet.opengradient.ai) · [docs.opengradient.ai](https://docs.opengradient.ai) · [x.com/OpenGradient](https://x.com/OpenGradient) · [discord.gg/2t5sx5BCpB](https://discord.gg/2t5sx5BCpB)
